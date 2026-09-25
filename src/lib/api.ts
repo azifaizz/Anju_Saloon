@@ -658,7 +658,22 @@ export interface Bill {
 }
 
 export const billingApi = {
-  create: (data: Bill) => billingService.post('/billing/create', data),
+  create: async (data: Bill) => {
+    try {
+      const response = await fetch("http://localhost:5000/api/process-billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to process bill");
+      // Format the response to match what the app expects (an Axios response with .data)
+      return { data: { id: result.billId, ...result.bill } };
+    } catch (e) {
+      console.error("Backend billing error:", e);
+      throw e;
+    }
+  },
   update: (id: string, data: Partial<Bill>) => billingService.patch(`/billing/update/${id}`, data), // Added generic update
   hold: (data: Bill) => billingService.post('/billing/hold', data),
 

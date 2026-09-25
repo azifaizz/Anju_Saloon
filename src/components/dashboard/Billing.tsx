@@ -759,27 +759,19 @@ const Billing: React.FC = () => {
         const billUrl = `${domain}/bill/${billId}`;
         const message = `Thank you for shopping at Anjus Beauty Saloon! View your bill for Rs. ${(totalAmount || 0).toFixed(2)} here: ${billUrl}`;
 
-        // Twilio Logic
-        const accountSid = "YOUR_ACCOUNT_SID";
-        const authToken = "YOUR_AUTH_TOKEN";
-        const messagingServiceSid = "YOUR_MESSAGING_SERVICE_SID";
-        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-
-        const formData = new URLSearchParams();
+        // Send SMS securely via the backend
         let formattedPhone = customerPhone.trim();
         if (!formattedPhone.startsWith("+")) formattedPhone = "+91" + formattedPhone;
 
-        formData.append("To", formattedPhone);
-        formData.append("MessagingServiceSid", messagingServiceSid);
-        formData.append("Body", message);
-
-        const response = await fetch(twilioUrl, {
+        const response = await fetch("http://localhost:5000/send-sms", {
           method: "POST",
-          headers: { "Authorization": "Basic " + btoa(`${accountSid}:${authToken}`), "Content-Type": "application/x-www-form-urlencoded" },
-          body: formData
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: formattedPhone, body: message })
         });
+        
         const responseData = await response.json();
-        if (!response.ok) throw new Error(responseData.message || "Failed to send SMS via Twilio");
+        if (!response.ok) throw new Error(responseData.error || "Failed to send SMS via backend");
+        
         toast.success(`SMS sent successfully to ${customerPhone}!`);
       } catch (err: any) {
         console.error("🔥 Error in sending SMS:", err);
