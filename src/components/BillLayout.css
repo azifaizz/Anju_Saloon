@@ -1,0 +1,182 @@
+
+/* BillLayout.css - Forced Thermal Print (80mm) */
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0mm !important;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-container,
+  .print-container *,
+  .bill-wrapper,
+  .bill-wrapper *,
+  .bill-container,
+  .bill-container * {
+    visibility: visible;
+  }
+
+  .print-container {
+    width: 100%;
+    margin: 0 auto;
+    position: relative;
+    padding: 0;
+    direction: ltr;
+    display: flex;
+    justify-content: center;
+  }
+
+  .bill-wrapper {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    display: block !important;
+  }
+
+  .bill-container {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 1mm 2mm !important; /* Minimal top padding, some side padding */
+    position: static !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    background-color: white;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 9.5pt;
+    font-weight: bold;
+    color: black;
+  }
+}
+
+.bill-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0;
+  background: #f3f4f6; /* light gray background for contrast */
+}
+
+.bill-container {
+  width: 80mm;
+  background: white;
+  padding: 2mm;
+  font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+  color: black;
+  font-weight: bold;
+  font-size: 9.5pt;
+  line-height: 1.25;
+  box-sizing: border-box;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+
+.bill-container h1 {
+  font-size: 14pt;
+  margin: 0;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.bill-container h2 {
+    font-size: 11pt;
+    margin: 2px 0;
+    text-align: center;
+}
+
+.bill-container p {
+  font-size: 8.5pt;
+  margin: 1px 0;
+  text-align: center;
+}
+
+.sep-single {
+  border-top: 1px dashed black;
+  margin: 2px 0;
+  width: 100%;
+}
+
+.sep-double {
+  border-top: 3px double black;
+  margin: 2px 0;
+  width: 100%;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+td, th {
+  padding: 2px 0;
+  vertical-align: top;
+}
+
+.items-table {
+  border: 1px solid black;
+  font-size: 9.5pt;
+}
+
+.items-table th, 
+.items-table td {
+  border: 1px solid black;
+  padding: 3px;
+}
+
+.totals-table {
+  width: 100%;
+  font-size: 10pt;
+}
+
+.grand-total-row {
+  font-size: 12pt;
+  border-top: 1px solid black;
+  border-bottom: 1px solid black;
+  padding: 2px 0;
+}
+
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-left { text-align: left; }
+
+.tamil-font {
+  font-family: 'Arial Unicode MS', 'Latha', sans-serif;
+}
+
+.footer {
+  font-size: 8pt;
+  margin-top: 10px;
+}
+
+.footer-terms {
+  text-align: left;
+}
+
+.footer ul {
+  padding-left: 15px;
+  margin: 5px 0 0;
+  list-style-position: outside;
+}
+
+.amount-in-words {
+  font-size: 8.5pt;
+  padding: 2px 0;
+}
