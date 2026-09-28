@@ -1312,7 +1312,9 @@ const StaffFormModal = ({ staff, onClose, onSuccess }: any) => {
                     <div className="grid grid-cols-2 gap-5">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Role</label>
-                            <select ref={roleRef} className="w-full border border-gray-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} onKeyDown={(e) => handleEnter(e, emergencyPhoneRef)}>{roles.length > 0 ? roles.map(r => <option key={r.name} value={r.name}>{r.name}</option>) : <option>Employee</option>}</select>
+                            <select ref={roleRef} className="w-full border border-gray-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} onKeyDown={(e) => handleEnter(e, emergencyPhoneRef)}>
+                                {['Admin', 'Cashier', 'Senior Stylist', 'Junior Stylist', 'Beautician', 'Hair Specialist', 'Employee'].map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Emergency Contact</label>
@@ -1335,8 +1337,8 @@ const StaffFormModal = ({ staff, onClose, onSuccess }: any) => {
                                 <input ref={permHoursRef} type="number" step="0.5" className="w-full border border-blue-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-mono" value={formData.allowedPermHours} onChange={e => setFormData({ ...formData, allowedPermHours: Number(e.target.value) })} onKeyDown={(e) => handleEnter(e, accountRef)} />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-blue-600/70 mb-1">Commission (%)</label>
-                                <input type="number" step="0.1" className="w-full border border-blue-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-mono" value={formData.commissionPercentage} onChange={e => setFormData({ ...formData, commissionPercentage: Number(e.target.value) })} />
+                                <label className="block text-xs font-bold text-blue-600/70 mb-1">Generic Retail Commission (%)</label>
+                                <input type="number" step="0.1" className="w-full border border-blue-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-mono" value={formData.commissionPercentage} onChange={e => setFormData({ ...formData, commissionPercentage: Number(e.target.value) })} title="Fallback commission for retail products. Service commissions are configured per-service." />
                             </div>
                         </div>
 

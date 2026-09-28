@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { billingApi, productApi, customerApi, brokerApi, estimationApi, appointmentApi, Appointment } from "@/lib/api";
+import { billingApi, productApi, customerApi, estimationApi, appointmentApi, Appointment, staffApi } from "@/lib/api";
 import { numberToWords } from "@/utils/numberToWords";
 import { useGlobalData } from "@/context/GlobalDataContext";
 import { useCachedResource } from '@/hooks/useCachedResource';
@@ -74,6 +74,9 @@ interface BillItem extends Product {
   RetailSellingPrice?: number;
   sellingPrice?: number;
   systemType?: "Retail" | "Wholesale";
+  commissionType?: 'PERCENTAGE' | 'FIXED';
+  commissionValue?: number;
+  staffCommissionAmount?: number;
 }
 
 
@@ -206,7 +209,7 @@ const buildPayloadFromUIItems = (
     const subtotal = round2(unitPrice * qty);
     const discountAmount = round2(subtotal * (discountRate / 100));
     const amountAfterDiscount = round2(subtotal - discountAmount);
-    
+
     // Inclusive GST math
     const taxable = round2(amountAfterDiscount / (1 + (gstRate / 100)));
     const gstAmount = round2(amountAfterDiscount - taxable);
@@ -241,7 +244,12 @@ const buildPayloadFromUIItems = (
       igstAmount,
       finalAmount: netAmount,
       netAmount,
-      imageUrl: ui.imageUrl || ""
+      imageUrl: ui.imageUrl || "",
+      commissionType: ui.commissionType,
+      commissionValue: ui.commissionValue,
+      staffCommissionAmount: ui.type === 'SERVICE' && ui.staffId 
+        ? round2(ui.commissionType === 'FIXED' ? (ui.commissionValue || 0) * Number(qty) : (netAmount * (ui.commissionValue || 0) / 100))
+        : 0
     };
   });
 
@@ -373,7 +381,7 @@ const AppointmentModal = ({ appointments, onSelect, onClose }: { appointments: A
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"><X size={20} /></button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
           {scheduledAppointments.length === 0 ? (
             <div className="text-center py-10 text-gray-500">
@@ -387,7 +395,7 @@ const AppointmentModal = ({ appointments, onSelect, onClose }: { appointments: A
                   <div>
                     <h3 className="font-bold text-gray-800">{appt.customerName}</h3>
                     <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                      <Phone size={14}/> {appt.customerPhone || 'No Phone'}
+                      <Phone size={14} /> {appt.customerPhone || 'No Phone'}
                     </p>
                   </div>
                   <div className="text-right">
@@ -409,17 +417,16 @@ const Billing: React.FC = () => {
     products: globalProducts,
     appointments,
     refreshAppointments,
-    
+
     customers: globalCustomers,
-    staff: globalStaff,
-    brokers: globalBrokers,
+    staff,
     bills: globalBills,
     holds: globalHolds,
     cancelledBills: globalCancelled,
     loading: globalLoading,
     isSyncing: globalSyncing,
     refreshProducts,
-    
+
     refreshCustomers,
     refreshBills,
     refreshHolds,
@@ -502,7 +509,7 @@ const Billing: React.FC = () => {
     refreshBills();
     refreshHolds();
     refreshProducts();
-    
+
   }, []);
 
   // Recalculate prices when switching between Retail and Retail
@@ -694,12 +701,12 @@ const Billing: React.FC = () => {
     const p = Number(price) || 0;
     const q = Number(qty) || 0;
     const dp = Number(discountPercent) || 0;
-    
+
     // Inclusive logic: price already includes GST
     const baseAmount = p * q;
     const discountAmt = baseAmount * (dp / 100);
     const amountAfterDiscount = baseAmount - discountAmt;
-    
+
     return Math.round(amountAfterDiscount);
   };
 
@@ -710,11 +717,11 @@ const Billing: React.FC = () => {
         if ((i.barcode || i.id) === barcode) {
           const baseAmount = Number(i.price) * Number(i.qty || 0);
           const amt = val === "" ? 0 : (baseAmount * (Number(val) / 100));
-          return { 
-            ...i, 
-            Discount: val, 
+          return {
+            ...i,
+            Discount: val,
             discountAmt: amt || "",
-            total: calculateItemTotal(i.price, i.qty, val, i.GST) 
+            total: calculateItemTotal(i.price, i.qty, val, i.GST)
           };
         }
         return i;
@@ -729,11 +736,11 @@ const Billing: React.FC = () => {
         if ((i.barcode || i.id) === barcode) {
           const baseAmount = Number(i.price) * Number(i.qty || 0);
           const percent = (amt === "" || baseAmount === 0) ? 0 : (Number(amt) / baseAmount) * 100;
-          return { 
-            ...i, 
-            discountAmt: amt, 
+          return {
+            ...i,
+            discountAmt: amt,
             Discount: percent.toFixed(2),
-            total: calculateItemTotal(i.price, i.qty, percent, i.GST) 
+            total: calculateItemTotal(i.price, i.qty, percent, i.GST)
           };
         }
         return i;
@@ -768,10 +775,10 @@ const Billing: React.FC = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ to: formattedPhone, body: message })
         });
-        
+
         const responseData = await response.json();
         if (!response.ok) throw new Error(responseData.error || "Failed to send SMS via backend");
-        
+
         toast.success(`SMS sent successfully to ${customerPhone}!`);
       } catch (err: any) {
         console.error("🔥 Error in sending SMS:", err);
@@ -933,29 +940,31 @@ const Billing: React.FC = () => {
       total: calculateItemTotal(service.price, 1, 0, Number(defaultGst) || 0),
       GST: Number(defaultGst) || 0,
       Discount: 0,
+      commissionType: service.commissionType || 'PERCENTAGE',
+      commissionValue: Number(service.commissionValue || 0),
     };
-    
+
     setItems((prev) => {
-        const existingItem = prev.find((i) => i.type === 'SERVICE' && i.serviceId === service.id);
-        if (existingItem) {
-            return prev.map((i) => 
-                i.type === 'SERVICE' && i.serviceId === service.id
-                  ? { ...i, qty: Number(i.qty) + 1, total: calculateItemTotal(i.price, Number(i.qty) + 1, i.Discount, i.GST) }
-                  : i
-            );
-        }
-        return [...prev, newItem];
+      const existingItem = prev.find((i) => i.type === 'SERVICE' && i.serviceId === service.id);
+      if (existingItem) {
+        return prev.map((i) =>
+          i.type === 'SERVICE' && i.serviceId === service.id
+            ? { ...i, qty: Number(i.qty) + 1, total: calculateItemTotal(i.price, Number(i.qty) + 1, i.Discount, i.GST) }
+            : i
+        );
+      }
+      return [...prev, newItem];
     });
   };
 
   const handleSelectAppointment = async (appt: Appointment) => {
     setIsAppointmentModalOpen(false);
     setSelectedAppointmentId(appt.id || null);
-    
+
     // Fill customer details
     setCustomerName(appt.customerName || "");
     setCustomerPhone(appt.customerPhone || "");
-    
+
     // Attempt to load services
     if (appt.serviceIds && appt.serviceIds.length > 0) {
       let addedCount = 0;
@@ -1033,15 +1042,15 @@ const Billing: React.FC = () => {
     const q = Number(item.qty) || 0;
     const d = Number(item.Discount) || 0;
     const g = Number(item.GST) || 0;
-    
+
     // Inclusive math for UI totals
     const subtotal = item.price * q;
     const discountAmt = subtotal * (d / 100);
     const amountAfterDiscount = subtotal - discountAmt;
-    
+
     const taxableAmount = amountAfterDiscount / (1 + (g / 100));
     const gstAmount = amountAfterDiscount - taxableAmount;
-    
+
     return {
       subtotal: acc.subtotal + (taxableAmount || 0),
       gst: acc.gst + (gstAmount || 0),
@@ -1105,7 +1114,7 @@ const Billing: React.FC = () => {
           const subtotal = unitPrice * qty;
           const discountAmount = subtotal * (discountRate / 100);
           const amountAfterDiscount = subtotal - discountAmount;
-          
+
           // Inclusive logic: finalTotal is just the amount after discount
           const finalTotal = amountAfterDiscount;
 
@@ -1330,6 +1339,27 @@ const Billing: React.FC = () => {
         console.warn("Backend response missing ID:", createdBill);
         throw new Error("Parameters returned from server invalid (Missing ID)");
       }
+
+      // Process Staff Commissions for SERVICES
+      for (const item of (billData.items as any[])) {
+        if (item.type === 'SERVICE' && item.staffId && item.staffCommissionAmount > 0) {
+          try {
+            await staffApi.addCommission({
+              staffId: item.staffId,
+              staffName: item.staffName,
+              billId: createdBill.id,
+              date: new Date().toISOString(),
+              amount: item.staffCommissionAmount,
+              serviceId: item.serviceId,
+              serviceName: item.productName,
+              status: 'UNPAID'
+            });
+          } catch (commErr) {
+            console.error("Failed to add commission for staff:", item.staffId, commErr);
+          }
+        }
+      }
+
       return createdBill.id;
     } catch (err) {
       console.error("Create bill error:", err);
@@ -1492,14 +1522,14 @@ const Billing: React.FC = () => {
         refreshHolds();
         refreshCancelled();
         refreshProducts();
-        
+
         // Update appointment status if one was linked
         if (selectedAppointmentId) {
           appointmentApi.update(selectedAppointmentId, { status: 'COMPLETED' } as any)
             .then(() => refreshAppointments())
             .catch(e => console.error('Failed to update appointment status', e));
         }
-        
+
       }, withGst);
 
     } catch (err: any) {
@@ -1559,7 +1589,7 @@ const Billing: React.FC = () => {
           refreshBills();
           refreshHolds();
           refreshProducts();
-          
+
         }, 500);
       } else {
         toast.error("Failed to hold bill. Please try again.");
@@ -1840,292 +1870,291 @@ const Billing: React.FC = () => {
           onClose={() => setIsSelectionModalOpen(false)}
         />
       )}
-      
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[calc(100vh-120px)] h-full mb-6">
-        {/* LEFT PANE - CART (70%) */}
-        <div className="lg:col-span-8 flex flex-col bg-white/80 rounded-2xl shadow-xl overflow-hidden border border-blue-100 backdrop-blur-sm h-full max-h-[calc(100vh-120px)]">
+
+      <div className="flex flex-col gap-6 h-full mb-6 pb-20">
+        {/* TOP PANE - CART */}
+        <div className="flex-1 flex flex-col bg-white/80 rounded-2xl shadow-xl overflow-hidden border border-blue-100 backdrop-blur-sm min-h-[400px]">
           {/* Header */}
           <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 border-b border-blue-100/50">
             {/* Premium Top Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/90 p-4 rounded-2xl shadow-sm border border-gray-100 backdrop-blur-md">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-200">
-              <ShoppingCart className="text-white" size={22} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                {isReturnMode ? "Return Processing" : (documentMode === "Estimation" ? "Estimation" : "Point of Sale")}
-                <SyncIndicator isSyncing={isSyncing} className="ml-1" />
-              </h1>
-              <p className="text-xs text-gray-500 font-medium">Smart Billing Dashboard</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => { refreshProducts(); refreshCustomers(); toast("Refreshing data...", { icon: '🔄' }); }}
-              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
-              title="Refresh Data"
-            >
-              <RefreshCw size={18} className={globalLoading ? "animate-spin" : ""} />
-            </button>
-
-            {!isReturnMode && (
-              <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-inner items-center">
-                <button
-                  onClick={() => setDocumentMode("Billing")}
-                  className={`px-6 py-1.5 rounded-lg text-sm font-bold transition-all duration-300 ${documentMode === "Billing" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  Billing
-                </button>
-                <button
-                  onClick={() => setDocumentMode("Estimation")}
-                  className={`px-6 py-1.5 rounded-lg text-sm font-bold transition-all duration-300 ${documentMode === "Estimation" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  Estimation
-                </button>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/90 p-4 rounded-2xl shadow-sm border border-gray-100 backdrop-blur-md">
+              <div className="flex items-center gap-4">
+                <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-200">
+                  <ShoppingCart className="text-white" size={22} />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                    {isReturnMode ? "Return Processing" : (documentMode === "Estimation" ? "Estimation" : "Point of Sale")}
+                    <SyncIndicator isSyncing={isSyncing} className="ml-1" />
+                  </h1>
+                  <p className="text-xs text-gray-500 font-medium">Smart Billing Dashboard</p>
+                </div>
               </div>
-            )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => { refreshProducts(); refreshCustomers(); toast("Refreshing data...", { icon: '🔄' }); }}
+                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
+                  title="Refresh Data"
+                >
+                  <RefreshCw size={18} className={globalLoading ? "animate-spin" : ""} />
+                </button>
+
+                {!isReturnMode && (
+                  <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-inner items-center">
+                    <button
+                      onClick={() => setDocumentMode("Billing")}
+                      className={`px-6 py-1.5 rounded-lg text-sm font-bold transition-all duration-300 ${documentMode === "Billing" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                    >
+                      Billing
+                    </button>
+                    <button
+                      onClick={() => setDocumentMode("Estimation")}
+                      className={`px-6 py-1.5 rounded-lg text-sm font-bold transition-all duration-300 ${documentMode === "Estimation" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                    >
+                      Estimation
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-          </div>
-          
+
           {/* Search Areas */}
           <div className="p-4 bg-white/60 border-b border-gray-100">
             {/* Search Input Area */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          
-          {/* Product Search */}
-          <motion.div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-2 transition-all hover:shadow-md focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-300 relative z-50">
-            <div className="pl-3 text-blue-400">
-              <PackageSearch size={20} />
-            </div>
-            <div className="relative flex-1">
-              <input type="text" placeholder="Scan Barcode or Enter Product Name..." value={barcode}
-                ref={barcodeInputRef}
-                onChange={handleProductSearchChange}
-                onKeyDown={handleProductKeyDown}
-                onFocus={() => { if (barcode.trim()) setIsProductDropdownOpen(true); }}
-                className="w-full bg-transparent border-none focus:ring-0 text-gray-700 placeholder-gray-400 font-medium py-2 px-2 text-sm outline-none"
-              />
-              {isProductDropdownOpen && productSuggestions.length > 0 && (
-                <div className="absolute top-full mt-2 left-0 w-full bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
-                  {productSuggestions.map((prod, idx) => (
-                    <div
-                      key={prod.id || prod.barcode}
-                      className={`px-4 py-2 cursor-pointer border-b border-gray-50 last:border-b-0 flex justify-between items-center transition-colors ${idx === highlightedProductIndex ? 'bg-blue-600 text-white' : 'hover:bg-blue-50 text-gray-800'}`}
-                      onMouseEnter={() => setHighlightedProductIndex(idx)}
-                      onClick={() => {
-                        addProductToBill(prod);
-                        setIsProductDropdownOpen(false);
-                      }}
-                    >
-                      <div>
-                        <div className={`font-medium ${idx === highlightedProductIndex ? 'text-white' : 'text-gray-800'}`}>{prod.name}</div>
-                        <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-400'}`}>{prod.barcode}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`font-bold ${idx === highlightedProductIndex ? 'text-white' : 'text-green-600'}`}>₹{prod.price}</div>
-                        <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-500'}`}>Stock: {prod.stockQuantity}</div>
-                      </div>
-                    </div>
-                  ))}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+              {/* Product Search */}
+              <motion.div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-2 transition-all hover:shadow-md focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-300 relative z-50">
+                <div className="pl-3 text-blue-400">
+                  <PackageSearch size={20} />
                 </div>
-              )}
+                <div className="relative flex-1">
+                  <input type="text" placeholder="Scan Barcode or Enter Product Name..." value={barcode}
+                    ref={barcodeInputRef}
+                    onChange={handleProductSearchChange}
+                    onKeyDown={handleProductKeyDown}
+                    onFocus={() => { if (barcode.trim()) setIsProductDropdownOpen(true); }}
+                    className="w-full bg-transparent border-none focus:ring-0 text-gray-700 placeholder-gray-400 font-medium py-2 px-2 text-sm outline-none"
+                  />
+                  {isProductDropdownOpen && productSuggestions.length > 0 && (
+                    <div className="absolute top-full mt-2 left-0 w-full bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
+                      {productSuggestions.map((prod, idx) => (
+                        <div
+                          key={prod.id || prod.barcode}
+                          className={`px-4 py-2 cursor-pointer border-b border-gray-50 last:border-b-0 flex justify-between items-center transition-colors ${idx === highlightedProductIndex ? 'bg-blue-600 text-white' : 'hover:bg-blue-50 text-gray-800'}`}
+                          onMouseEnter={() => setHighlightedProductIndex(idx)}
+                          onClick={() => {
+                            addProductToBill(prod);
+                            setIsProductDropdownOpen(false);
+                          }}
+                        >
+                          <div>
+                            <div className={`font-medium ${idx === highlightedProductIndex ? 'text-white' : 'text-gray-800'}`}>{prod.name}</div>
+                            <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-400'}`}>{prod.barcode}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-bold ${idx === highlightedProductIndex ? 'text-white' : 'text-green-600'}`}>₹{prod.price}</div>
+                            <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-500'}`}>Stock: {prod.stockQuantity}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {lastSelectedProduct?.imageUrl && (
+                  <div className="w-10 h-10 shrink-0 rounded-lg overflow-hidden border border-gray-100 cursor-zoom-in mr-1 shadow-sm" onClick={() => setZoomedImage(lastSelectedProduct.imageUrl)}>
+                    <img src={lastSelectedProduct.imageUrl} alt="" className="w-full h-full object-cover" />
+                  </div>
+                )}
+
+                <button onClick={handleAddProduct} disabled={loading}
+                  className={`px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all ${loading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                >
+                  {loading ? "..." : "Add"}
+                </button>
+              </motion.div>
+
+              {/* Service Search */}
+              <motion.div className="relative z-40 h-full flex items-center">
+                <div className="w-full">
+                  <ServiceSelector onAddService={handleAddService} disabled={loading} />
+                </div>
+              </motion.div>
             </div>
-
-            {lastSelectedProduct?.imageUrl && (
-              <div className="w-10 h-10 shrink-0 rounded-lg overflow-hidden border border-gray-100 cursor-zoom-in mr-1 shadow-sm" onClick={() => setZoomedImage(lastSelectedProduct.imageUrl)}>
-                <img src={lastSelectedProduct.imageUrl} alt="" className="w-full h-full object-cover" />
-              </div>
-            )}
-
-            <button onClick={handleAddProduct} disabled={loading}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all ${loading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
-            >
-              {loading ? "..." : "Add"}
-            </button>
-          </motion.div>
-
-          {/* Service Search */}
-          <motion.div className="relative z-40 h-full flex items-center">
-             <div className="w-full">
-               <ServiceSelector onAddService={handleAddService} disabled={loading} />
-             </div>
-          </motion.div>
-        </div>
           </div>
 
           {/* Table Container */}
           <div className="flex-1 overflow-auto bg-white/50 min-h-0">
-<div className="min-w-[800px]">
-          <table className="w-full text-sm text-gray-700">
-            <thead className="bg-gradient-to-r from-blue-100 to-indigo-100 text-sm text-gray-700">
-              <tr>
-                <th className="p-3 text-center">S. NO</th>
-                <th className="p-3 text-center">Image</th>
-                <th className="p-3 text-left">Item ID</th>
-                <th className="p-3 text-left">Item Name</th>
-                <th className="p-3 text-left">Staff</th>
-                <th className="p-3 text-center">Price</th>
-                <th className="p-3 text-center">Qty</th>
-                <th className="p-3 text-center">Disc (%)</th>
-                <th className="p-3 text-center">Disc (₹)</th>
-                <th className="p-3 text-center">GST (%)</th><th className="p-3 text-center">Total</th>
-                <th className="p-3 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i, idx) => (
-                <motion.tr key={i.barcode} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  className="border-t hover:bg-blue-50/60 transition"
-                >
-                  <td className="p-2 text-center">{idx + 1}</td>
-                  <td className="p-2 text-center">
-                    {i.imageUrl ? (
-                      <img src={i.imageUrl} alt={i.name} className="w-10 h-10 object-cover rounded shadow-sm mx-auto" />
-                    ) : (
-                      <div className="w-10 h-10 bg-gray-100 border border-dashed border-gray-300 rounded mx-auto flex items-center justify-center text-[10px] text-gray-400 font-medium">Img</div>
-                    )}
-                  </td>
-                  <td className="p-2 text-left font-mono">{i.barcode || i.id}</td>
-                  <td className="p-2 text-left font-medium">
-                    {i.name}
-                    {i.type === 'SERVICE' && (
-                      <span className="ml-2 text-[10px] bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded-full">SERVICE</span>
-                    )}
-                  </td>
-                  <td className="p-2 text-left">
-                    {i.type === 'SERVICE' ? (
-                      <select
-                        value={i.staffId || ''}
-                        onChange={(e) => {
-                          const staffMember = staff.find(s => s.id === e.target.value);
-                          handleStaffChange(i.barcode || i.id || "", e.target.value, staffMember?.name || "");
-                        }}
-                        className="border p-1 rounded text-xs w-full max-w-[120px]"
-                      >
-                        <option value="">Select Staff</option>
-                        {staff.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-gray-400 text-xs">-</span>
-                    )}
-                  </td>
-                  <td className="p-2 text-center">
-                    <input
-                      type="number"
-                      onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                      min="0"
-                      step="0.01"
-                      value={i.price}
-                      onChange={(e) => handlePriceChange(i.barcode || i.id || "", parseFloat(e.target.value) || 0)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const nextEl = (e.target as HTMLElement).closest('td')?.nextElementSibling?.querySelector('input');
-                          nextEl?.focus();
-                          if (nextEl) (nextEl as HTMLInputElement).select();
-                        }
-                      }}
-                      className="border w-20 p-1 rounded mx-auto text-center"
-                    />
-                  </td>
-                  <td className="p-2 text-center w-24">
-                    <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.qty} onChange={(e) => handleQtyChange(i.barcode || i.id || "", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const nextTd = (e.target as HTMLElement).closest('td')?.nextElementSibling;
-                          const nextEl = nextTd?.querySelector('input:not([disabled]), button');
-                          if (nextEl) {
-                            (nextEl as HTMLElement).focus();
-                            if ((nextEl as any).select) (nextEl as HTMLInputElement).select();
-                          } else {
-                            // Skip disabled input
-                            const nextNextTd = nextTd?.nextElementSibling?.nextElementSibling?.nextElementSibling;
-                            nextNextTd?.querySelector('button')?.focus();
-                          }
-                        }
-                      }}
-                      className="border w-16 p-1 rounded mx-auto text-center"
-                    />
-                  </td>
-                  <td className="p-2 text-center">
-                    <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.Discount} max={100} onChange={(e) => handleDiscountChange(i.barcode || i.id || "", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const nextInput = (e.target as HTMLElement).closest('td')?.nextElementSibling?.querySelector('input');
-                          nextInput?.focus();
-                          (nextInput as any)?.select();
-                        }
-                      }}
-                      className="border w-16 p-1 rounded mx-auto text-center"
-                      disabled={isReturnMode}
-                    />
-                  </td>
-                  <td className="p-2 text-center">
-                    <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.discountAmt} onChange={(e) => handleDiscountAmtChange(i.barcode || i.id || "", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const nextInput = (e.target as HTMLElement).closest('td')?.nextElementSibling?.querySelector('input');
-                          nextInput?.focus();
-                          (nextInput as any)?.select();
-                        }
-                      }}
-                      className="border w-20 p-1 rounded mx-auto text-center font-mono text-xs"
-                      disabled={isReturnMode}
-                    />
-                  </td>
-                  <td className="p-2 text-center">
-                    <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.GST} onChange={(e) => handleGSTChange(i.barcode || i.id || "", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const actionBtn = (e.target as HTMLElement).closest('tr')?.querySelector('td:last-child button');
-                          (actionBtn as HTMLElement)?.focus();
-                        }
-                      }}
-                      className="border w-16 p-1 rounded mx-auto text-center"
-                      disabled={isReturnMode}
-                    />
-                  </td>
-                  <td className="p-2 text-center font-semibold">₹{(i.total || 0).toFixed(2)}</td>
-                  <td className="p-2 text-center">
-                    {isReturnMode ? (
-                      <button onClick={() => handleRestoreStock(i.barcode || i.id || "", Number(i.qty))} className="text-green-600 hover:text-green-800" title="Restore to Stock">
-                        <RefreshCw size={18} />
-                      </button>
-                    ) : (
-                      <button className="text-red-500 cursor-pointer hover:text-red-700" onClick={() => handleRemoveItem(i.barcode || i.id || "")}>Remove</button>
-                    )}
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-</div>
+            <div className="min-w-[800px]">
+              <table className="w-full text-sm text-gray-700">
+                <thead className="bg-gradient-to-r from-blue-100 to-indigo-100 text-sm text-gray-700">
+                  <tr>
+                    <th className="p-3 text-center">S. NO</th>
+                    <th className="p-3 text-center">Image</th>
+                    <th className="p-3 text-left">Item ID</th>
+                    <th className="p-3 text-left">Item Name</th>
+                    <th className="p-3 text-left">Staff</th>
+                    <th className="p-3 text-center">Price</th>
+                    <th className="p-3 text-center">Qty</th>
+                    <th className="p-3 text-center">Disc (%)</th>
+                    <th className="p-3 text-center">Disc (₹)</th>
+                    <th className="p-3 text-center">GST (%)</th><th className="p-3 text-center">Total</th>
+                    <th className="p-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((i, idx) => (
+                    <motion.tr key={i.barcode || i.id || idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                      className="border-t hover:bg-blue-50/60 transition"
+                    >
+                      <td className="p-2 text-center">{idx + 1}</td>
+                      <td className="p-2 text-center">
+                        {i.imageUrl ? (
+                          <img src={i.imageUrl} alt={i.name} className="w-10 h-10 object-cover rounded shadow-sm mx-auto" />
+                        ) : (
+                          <div className="w-10 h-10 bg-gray-100 border border-dashed border-gray-300 rounded mx-auto flex items-center justify-center text-[10px] text-gray-400 font-medium">Img</div>
+                        )}
+                      </td>
+                      <td className="p-2 text-left font-mono">{i.barcode || i.id}</td>
+                      <td className="p-2 text-left font-medium">
+                        {i.name}
+                        {i.type === 'SERVICE' && (
+                          <span className="ml-2 text-[10px] bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded-full">SERVICE</span>
+                        )}
+                      </td>
+                      <td className="p-2 text-left">
+                        {i.type === 'SERVICE' ? (
+                          <select
+                            value={i.staffId || ''}
+                            onChange={(e) => {
+                              const staffMember = staff.find(s => s.id === e.target.value);
+                              handleStaffChange(i.barcode || i.id || "", e.target.value, staffMember?.name || "");
+                            }}
+                            className="border p-1 rounded text-xs w-full max-w-[120px]"
+                          >
+                            <option value="">Select Staff</option>
+                            {staff.map(s => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-400 text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="p-2 text-center">
+                        <input
+                          type="number"
+                          onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                          min="0"
+                          step="0.01"
+                          value={i.price}
+                          onChange={(e) => handlePriceChange(i.barcode || i.id || "", parseFloat(e.target.value) || 0)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const nextEl = (e.target as HTMLElement).closest('td')?.nextElementSibling?.querySelector('input');
+                              nextEl?.focus();
+                              if (nextEl) (nextEl as HTMLInputElement).select();
+                            }
+                          }}
+                          className="border w-20 p-1 rounded mx-auto text-center"
+                        />
+                      </td>
+                      <td className="p-2 text-center w-24">
+                        <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.qty} onChange={(e) => handleQtyChange(i.barcode || i.id || "", e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const nextTd = (e.target as HTMLElement).closest('td')?.nextElementSibling;
+                              const nextEl = nextTd?.querySelector('input:not([disabled]), button');
+                              if (nextEl) {
+                                (nextEl as HTMLElement).focus();
+                                if ((nextEl as any).select) (nextEl as HTMLInputElement).select();
+                              } else {
+                                // Skip disabled input
+                                const nextNextTd = nextTd?.nextElementSibling?.nextElementSibling?.nextElementSibling;
+                                nextNextTd?.querySelector('button')?.focus();
+                              }
+                            }
+                          }}
+                          className="border w-16 p-1 rounded mx-auto text-center"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.Discount} max={100} onChange={(e) => handleDiscountChange(i.barcode || i.id || "", e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const nextInput = (e.target as HTMLElement).closest('td')?.nextElementSibling?.querySelector('input');
+                              nextInput?.focus();
+                              (nextInput as any)?.select();
+                            }
+                          }}
+                          className="border w-16 p-1 rounded mx-auto text-center"
+                          disabled={isReturnMode}
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.discountAmt} onChange={(e) => handleDiscountAmtChange(i.barcode || i.id || "", e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const nextInput = (e.target as HTMLElement).closest('td')?.nextElementSibling?.querySelector('input');
+                              nextInput?.focus();
+                              (nextInput as any)?.select();
+                            }
+                          }}
+                          className="border w-20 p-1 rounded mx-auto text-center font-mono text-xs"
+                          disabled={isReturnMode}
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={i.GST} onChange={(e) => handleGSTChange(i.barcode || i.id || "", e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const actionBtn = (e.target as HTMLElement).closest('tr')?.querySelector('td:last-child button');
+                              (actionBtn as HTMLElement)?.focus();
+                            }
+                          }}
+                          className="border w-16 p-1 rounded mx-auto text-center"
+                          disabled={isReturnMode}
+                        />
+                      </td>
+                      <td className="p-2 text-center font-semibold">₹{(i.total || 0).toFixed(2)}</td>
+                      <td className="p-2 text-center">
+                        {isReturnMode ? (
+                          <button onClick={() => handleRestoreStock(i.barcode || i.id || "", Number(i.qty))} className="text-green-600 hover:text-green-800" title="Restore to Stock">
+                            <RefreshCw size={18} />
+                          </button>
+                        ) : (
+                          <button className="text-red-500 cursor-pointer hover:text-red-700" onClick={() => handleRemoveItem(i.barcode || i.id || "")}>Remove</button>
+                        )}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
-        {/* RIGHT PANE - SETTINGS & TOTALS (30%) */}
-        <div className="lg:col-span-4 flex flex-col bg-white/90 rounded-2xl shadow-xl overflow-hidden border border-blue-100 backdrop-blur-sm h-full max-h-[calc(100vh-120px)] relative">
-          
-          {/* Scrollable Customer & Settings area */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6 bg-gradient-to-b from-gray-50/50 to-white">
-            
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
+        {/* BOTTOM PANE - SETTINGS & TOTALS */}
+        <div className="w-full bg-white/90 rounded-2xl shadow-xl overflow-hidden border border-blue-100 backdrop-blur-sm p-5 grid grid-cols-1 md:grid-cols-3 gap-6 bg-gradient-to-b from-gray-50/50 to-white">
+
+          {/* Column 1: Customer Details */}
+          <div className="flex flex-col gap-4 h-full">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3 h-full">
               <div className="flex justify-between items-center mb-1">
-                 <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User size={16} className="text-blue-500"/> Customer</h3>
-                 <motion.button whileHover={{ scale: 1.02 }} onClick={() => setIsAppointmentModalOpen(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors"><Calendar size={12}/> Load Appt</motion.button>
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User size={16} className="text-blue-500" /> Customer</h3>
+                <motion.button whileHover={{ scale: 1.02 }} onClick={() => setIsAppointmentModalOpen(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors"><Calendar size={12} /> Load Appt</motion.button>
               </div>
-              
+
               <div className="space-y-3">
-                 <div className="relative w-full">
+                <div className="relative w-full">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <input type="text" placeholder="Customer Name" ref={customerNameRef} value={customerName} onChange={handleCustomerNameChange} onFocus={() => { if (customerName) handleCustomerNameChange({ target: { value: customerName } } as any); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerPhoneRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
                   {customerSuggestions.length > 0 && (
@@ -2138,10 +2167,10 @@ const Billing: React.FC = () => {
                       ))}
                     </div>
                   )}
-                 </div>
+                </div>
 
-                 <div className="grid grid-cols-2 gap-3">
-                   <div className="relative w-full">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="relative w-full">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input type="text" placeholder="Phone" ref={customerPhoneRef} value={customerPhone} onChange={handlePhoneChange} onFocus={() => { if (customerPhone) handlePhoneChange({ target: { value: customerPhone } } as any); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerEmailRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
                     {phoneSuggestions.length > 0 && (
@@ -2154,79 +2183,82 @@ const Billing: React.FC = () => {
                         ))}
                       </div>
                     )}
-                   </div>
-                   
-                   <div className="relative w-full">
+                  </div>
+
+                  <div className="relative w-full">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input ref={customerEmailRef} type="email" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerGstRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
-                   </div>
-                 </div>
-                 
-                 <div className="relative w-full">
+                  </div>
+                </div>
+
+                <div className="relative w-full">
                   <input ref={customerGstRef} type="text" placeholder="Customer GST (Optional)" value={customerGst} onChange={(e) => setCustomerGst(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerAddressRef.current?.focus(); } }} className="px-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
-                 </div>
-                 <div className="relative w-full">
+                </div>
+                <div className="relative w-full">
                   <input ref={customerAddressRef} type="text" placeholder="Customer Address (Optional)" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); } }} className="px-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
-                 </div>
+                </div>
               </div>
             </div>
+          </div>
 
+          {/* Column 2: Order & Payment */}
+          <div className="flex flex-col gap-4 h-full">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
-               <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Briefcase size={16} className="text-indigo-500"/> Order Details</h3>
-               
-               <div className="flex gap-2">
-                 <select value={customerMode} onChange={(e) => setCustomerMode(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-gray-50/50 focus:ring-2 focus:ring-indigo-400 outline-none transition-all">
-                   <option value="Walk-in">Walk-in Mode</option>
-                   <option value="Online">Online Mode</option>
-                 </select>
-                 
-                 {documentMode !== "Estimation" && (
-                   <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-gray-50/50 focus:ring-2 focus:ring-indigo-400 outline-none transition-all">
-                     <option value="Cash">Cash</option><option value="Card">Card</option>
-                     <option value="UPI">UPI</option><option value="Split Payment">Split</option>
-                     <option value="PARTIAL">Partial</option>
-                     <option value="Other">Other</option>
-                   </select>
-                 )}
-               </div>
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Briefcase size={16} className="text-indigo-500" /> Order Details</h3>
 
-               <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <select value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-indigo-400 bg-gray-50/50 outline-none appearance-none transition-all text-gray-600">
-                      <option value="">Sales Staff (Optional)</option>
-                      {Array.isArray(globalStaff) && globalStaff.filter((s: any) => s.isActive).map((s: any) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
+              <div className="flex gap-2">
+                <select value={customerMode} onChange={(e) => setCustomerMode(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-gray-50/50 focus:ring-2 focus:ring-indigo-400 outline-none transition-all">
+                  <option value="Walk-in">Walk-in Mode</option>
+                  <option value="Online">Online Mode</option>
+                </select>
+
+                {documentMode !== "Estimation" && (
+                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 bg-gray-50/50 focus:ring-2 focus:ring-indigo-400 outline-none transition-all">
+                    <option value="Cash">Cash</option><option value="Card">Card</option>
+                    <option value="UPI">UPI</option><option value="Split Payment">Split</option>
+                    <option value="PARTIAL">Partial</option>
+                    <option value="Other">Other</option>
+                  </select>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <select value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-indigo-400 bg-gray-50/50 outline-none appearance-none transition-all text-gray-600">
+                    <option value="">Sales Staff (Optional)</option>
+                    {Array.isArray(staff) && staff.filter((s: any) => s.isActive).map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {selectedStaffId && (
+                  <div className="relative w-24">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                    <input type="number" placeholder="Comm" value={staffCommissionPercentage} onChange={(e) => setStaffCommissionPercentage(e.target.value)} className="pl-7 pr-2 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-indigo-400 bg-gray-50/50 outline-none transition-all" />
                   </div>
-                  {selectedStaffId && (
-                    <div className="relative w-24">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
-                      <input type="number" placeholder="Comm" value={staffCommissionPercentage} onChange={(e) => setStaffCommissionPercentage(e.target.value)} className="pl-7 pr-2 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-indigo-400 bg-gray-50/50 outline-none transition-all" />
-                    </div>
-                  )}
-               </div>
+                )}
+              </div>
 
-               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
-                  <input type="checkbox" id="expiryReminderToggle" checked={enableExpiryReminder} onChange={(e) => setEnableExpiryReminder(e.target.checked)} className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer" />
-                  <label htmlFor="expiryReminderToggle" className="font-medium text-gray-700 cursor-pointer text-sm select-none">Reminder</label>
-                  {enableExpiryReminder && (
-                    <div className="flex items-center gap-1 ml-auto">
-                      <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={expiryDays} onChange={(e) => setExpiryDays(e.target.value)} className="w-16 border border-gray-200 rounded-md px-2 py-1 text-center font-medium text-indigo-800 bg-indigo-50 focus:ring-2 focus:ring-indigo-400 outline-none text-sm" />
-                      <span className="text-xs text-gray-500">days</span>
-                    </div>
-                  )}
-               </div>
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+                <input type="checkbox" id="expiryReminderToggle" checked={enableExpiryReminder} onChange={(e) => setEnableExpiryReminder(e.target.checked)} className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer" />
+                <label htmlFor="expiryReminderToggle" className="font-medium text-gray-700 cursor-pointer text-sm select-none">Reminder</label>
+                {enableExpiryReminder && (
+                  <div className="flex items-center gap-1 ml-auto">
+                    <input type="number" onWheel={(e) => (e.target as HTMLInputElement).blur()} value={expiryDays} onChange={(e) => setExpiryDays(e.target.value)} className="w-16 border border-gray-200 rounded-md px-2 py-1 text-center font-medium text-indigo-800 bg-indigo-50 focus:ring-2 focus:ring-indigo-400 outline-none text-sm" />
+                    <span className="text-xs text-gray-500">days</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {!isReturnMode && holds.length > 0 && (
               <div className="bg-yellow-50/50 rounded-xl shadow-sm border border-yellow-200/50 p-4 space-y-2">
-                <h3 className="font-semibold text-yellow-800 flex items-center gap-2 text-sm"><AlertCircle size={14}/> Held Bills ({holds.length})</h3>
+                <h3 className="font-semibold text-yellow-800 flex items-center gap-2 text-sm"><AlertCircle size={14} /> Held Bills ({holds.length})</h3>
                 <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
                   {holds.map((h: any) => (
                     <div key={h.id} onClick={() => handleRetrieveHold(h)} className="shrink-0 w-32 p-2 bg-white border border-yellow-200 rounded-lg cursor-pointer hover:bg-yellow-50 hover:border-yellow-300 transition-colors shadow-sm relative group">
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteHeldBill(h.id); }} className="absolute -top-1 -right-1 p-0.5 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteHeldBill(h.id); }} className="absolute -top-1 -right-1 p-0.5 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
                       <div className="text-xs font-bold text-gray-800 truncate">{h.customerName || "Unnamed"}</div>
                       <div className="text-xs text-green-600 font-semibold mt-1">₹{h.finalAmount}</div>
                     </div>
@@ -2236,15 +2268,17 @@ const Billing: React.FC = () => {
             )}
           </div>
 
-          <div className="bg-gradient-to-t from-gray-50 to-white border-t border-gray-200 p-5 mt-auto shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.05)] z-10">
-             
-             {paymentMethod === "Cash" && documentMode !== "Estimation" && (
+          {/* Column 3: Totals & Actions */}
+          <div className="flex flex-col gap-4 h-full">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between h-full relative z-10">
+
+              {paymentMethod === "Cash" && documentMode !== "Estimation" && (
                 <div className="relative mb-3">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">₹</span>
                   <input type="number" placeholder="Cash Received" value={receivedAmount} onChange={(e) => setReceivedAmount(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isReturnMode) handleSaveReturnAndPrint(); else handleSaveAndPrint(true); } }} className="pl-8 pr-3 py-2.5 text-sm border-2 border-green-200 bg-green-50/30 rounded-xl w-full focus:ring-0 focus:border-green-400 font-semibold text-green-800 transition-colors outline-none" />
                 </div>
-             )}
-             {paymentMethod === "Split Payment" && documentMode !== "Estimation" && (
+              )}
+              {paymentMethod === "Split Payment" && documentMode !== "Estimation" && (
                 <div className="flex gap-2 mb-3">
                   <div className="relative flex-1">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">₹</span>
@@ -2255,9 +2289,9 @@ const Billing: React.FC = () => {
                     <input type="number" placeholder="Online" value={onlineAmount} onChange={(e) => setOnlineAmount(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isReturnMode) handleSaveReturnAndPrint(); else handleSaveAndPrint(true); } }} className="pl-8 pr-2 py-2 text-sm border-2 border-blue-200 bg-blue-50/30 rounded-xl w-full focus:ring-0 focus:border-blue-400 font-semibold text-blue-800 transition-colors outline-none" />
                   </div>
                 </div>
-             )}
-             
-             <div className="space-y-1 mb-4">
+              )}
+
+              <div className="space-y-1 mb-4">
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Subtotal</span>
                   <span className="font-mono">₹{(totalTaxableAmount || 0).toFixed(2)}</span>
@@ -2276,7 +2310,7 @@ const Billing: React.FC = () => {
                   <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">{isReturnMode ? "New Total" : "Grand Total"}</span>
                   <span className="text-3xl font-black text-blue-700 tracking-tight">₹{(totalAmount || 0).toFixed(2)}</span>
                 </div>
-                
+
                 {isReturnMode && (
                   <div className={`flex justify-between text-sm font-bold mt-1 px-2 py-1.5 rounded-md ${totalAmount - originalTotal >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     <span>{totalAmount - originalTotal >= 0 ? "Additional Due" : "Refund Due"}</span>
@@ -2289,60 +2323,57 @@ const Billing: React.FC = () => {
                     <span>₹{(changeDue || 0).toFixed(2)}</span>
                   </div>
                 )}
-             </div>
+              </div>
 
-             <div className="grid grid-cols-2 gap-2">
-               {isReturnMode ? (
-                 <>
-                   <button onClick={handleSaveReturnAndPrint} disabled={loading} className="col-span-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
-                     {loading ? <RefreshCw className="animate-spin" size={18} /> : <Printer size={18} />} {loading ? "Processing..." : "Save & Print Return"}
-                   </button>
-                   <button onClick={handleReset} disabled={loading} className="col-span-2 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
-                     Exit Return Mode
-                   </button>
-                 </>
-               ) : (
-                 <>
-                   {documentMode === "Billing" ? (
-                     <>
-                       <button onClick={() => handleSaveAndPrint(true)} disabled={loading} className="col-span-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 rounded-xl font-bold text-lg shadow-lg shadow-green-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 tracking-wide">
-                         {loading ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />} {loading ? "Saving..." : "Save & Print Bill"}
-                       </button>
-                       <button onClick={handleHoldBill} disabled={loading} className="col-span-1 bg-yellow-50 text-yellow-700 border border-yellow-200 py-2.5 rounded-xl font-semibold hover:bg-yellow-100 transition-colors flex items-center justify-center gap-2">
-                         Hold
-                       </button>
-                       <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                         Reset
-                       </button>
-                       
-                       <div className="col-span-2 flex justify-between mt-1 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                {isReturnMode ? (
+                  <>
+                    <button onClick={handleSaveReturnAndPrint} disabled={loading} className="col-span-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+                      {loading ? <RefreshCw className="animate-spin" size={18} /> : <Printer size={18} />} {loading ? "Processing..." : "Save & Print Return"}
+                    </button>
+                    <button onClick={handleReset} disabled={loading} className="col-span-2 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                      Exit Return Mode
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {documentMode === "Billing" ? (
+                      <>
+                        <button onClick={() => handleSaveAndPrint(true)} disabled={loading} className="col-span-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 rounded-xl font-bold text-lg shadow-lg shadow-green-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 tracking-wide">
+                          {loading ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />} {loading ? "Saving..." : "Save & Print Bill"}
+                        </button>
+                        <button onClick={handleHoldBill} disabled={loading} className="col-span-1 bg-yellow-50 text-yellow-700 border border-yellow-200 py-2.5 rounded-xl font-semibold hover:bg-yellow-100 transition-colors flex items-center justify-center gap-2">
+                          Hold
+                        </button>
+                        <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+                          Reset
+                        </button>
+
+                        <div className="col-span-2 flex justify-between mt-1 gap-2">
                           <button onClick={() => setIsReturnModalOpen(true)} className="flex-1 bg-white border border-gray-200 text-gray-700 py-2 rounded-lg text-xs font-semibold hover:bg-gray-50 flex items-center justify-center gap-1"><Undo2 size={12} /> Return</button>
                           <button onClick={handleSendWhatsApp} disabled={loading || !customerPhone || customerPhone.trim().length < 10} className="flex-1 bg-[#25D366]/10 border border-[#25D366]/30 text-[#128C7E] disabled:opacity-50 disabled:cursor-not-allowed py-2 rounded-lg text-xs font-semibold hover:bg-[#25D366]/20 flex items-center justify-center gap-1"><MessageCircle size={12} /> WhatsApp</button>
-                       </div>
-                     </>
-                   ) : (
-                     <>
-                       <button onClick={() => handleSaveAndPrint(false)} disabled={loading} className="col-span-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
-                         {loading ? <RefreshCw className="animate-spin" size={18} /> : <Printer size={18} />} Print Estimate
-                       </button>
-                       <button onClick={() => setIsEstimationModalOpen(true)} disabled={loading} className="col-span-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl font-semibold hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1">
-                         Load
-                       </button>
-                       <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-1">
-                         Reset
-                       </button>
-                     </>
-                   )}
-                 </>
-               )}
-             </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => handleSaveAndPrint(false)} disabled={loading} className="col-span-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+                          {loading ? <RefreshCw className="animate-spin" size={18} /> : <Printer size={18} />} Print Estimate
+                        </button>
+                        <button onClick={() => setIsEstimationModalOpen(true)} disabled={loading} className="col-span-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl font-semibold hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1">
+                          Load
+                        </button>
+                        <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-1">
+                          Reset
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    
-
-
-
     </>
   );
 };

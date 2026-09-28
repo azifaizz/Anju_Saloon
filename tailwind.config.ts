@@ -88,13 +88,13 @@ module.exports = {
     require("tailwindcss-animate"),
     plugin(function ({ addUtilities }) {
       addUtilities({
-        '.text-gradient-silk': {
+        '.text-gradient-salon': {
           '@apply bg-gradient-to-r from-pink-500 via-red-500 to-purple-600 bg-clip-text text-transparent': {},
         },
         '.text-gradient-gold': {
           '@apply bg-gradient-to-r from-yellow-400 via-orange-400 to-yellow-300 bg-clip-text text-transparent': {},
         },
-        '.bg-gradient-silk': {
+        '.bg-gradient-salon': {
           '@apply bg-gradient-to-br from-pink-500 to-purple-500': {},
         },
         '.bg-gradient-gold': {

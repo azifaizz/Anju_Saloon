@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { auth, db } from '@/lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { User, Lock, ArrowRight, Chrome, Eye, EyeOff } from 'lucide-react';
 const Login = () => {
@@ -165,7 +165,20 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
 
     try {
       // Firebase Authentication
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+      } catch (authErr: any) {
+        // If this is a brand new Firebase project, the admin account won't exist yet.
+        // Auto-create it if they are trying to log in as admin@mail.com
+        if (expectedRole === 'Admin' && email === 'admin@mail.com' && (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/invalid-login-credentials')) {
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          console.log("Auto-created admin@mail.com account in Firebase Auth!");
+        } else {
+          throw authErr;
+        }
+      }
+      
       const firebaseUser = userCredential.user;
 
       // Check Role in Firestore (Create if missing)
@@ -174,7 +187,6 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
 
       if (!docSnap.exists()) {
         // SECURITY CHECK: Only allow specific emails to auto-create as Admin
-        // This prevents any authenticated user from becoming an Admin just by trying.
         if (expectedRole === 'Admin' && firebaseUser.email !== 'admin@mail.com') {
           await auth.signOut(); // Force logout
           throw new Error("Access denied: You do not have Administrator privileges.");

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useGlobalData } from '@/context/GlobalDataContext';
-import { salonServiceApi, SalonService } from '@/lib/api';
+import { salonServiceApi, SalonService, Staff } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { Search, Plus, Edit2, Trash2, Scissors, X } from 'lucide-react';
 import { useConfirm } from '@/hooks/useConfirm';
 
 export default function Services() {
-  const { salonServices, refreshSalonServices } = useGlobalData();
+  const { salonServices, staff, refreshSalonServices } = useGlobalData();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<SalonService | null>(null);
@@ -78,6 +78,8 @@ export default function Services() {
                 <th className="p-4 font-semibold border-b border-slate-200">Name</th>
                 <th className="p-4 font-semibold border-b border-slate-200">Category</th>
                 <th className="p-4 font-semibold border-b border-slate-200">Price</th>
+                <th className="p-4 font-semibold border-b border-slate-200">Commission</th>
+                <th className="p-4 font-semibold border-b border-slate-200">Staff Eligibility</th>
                 <th className="p-4 font-semibold border-b border-slate-200">Duration (min)</th>
                 <th className="p-4 font-semibold border-b border-slate-200">Status</th>
                 <th className="p-4 font-semibold border-b border-slate-200 text-right">Actions</th>
@@ -92,6 +94,12 @@ export default function Services() {
                   </td>
                   <td className="p-4 text-slate-600">{service.categoryId || 'N/A'}</td>
                   <td className="p-4 font-medium text-slate-800">₹{service.price}</td>
+                  <td className="p-4 text-slate-600">
+                    {service.commissionType === 'PERCENTAGE' ? `${service.commissionValue || 0}%` : `₹${service.commissionValue || 0}`}
+                  </td>
+                  <td className="p-4 text-slate-600">
+                    {(service.eligibleStaffIds || []).length > 0 ? `${service.eligibleStaffIds?.length} Staff` : 'All Staff'}
+                  </td>
                   <td className="p-4 text-slate-600">{service.duration || '-'}</td>
                   <td className="p-4">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -134,6 +142,7 @@ export default function Services() {
       {isModalOpen && (
         <ServiceModal 
           service={editingService} 
+          staffList={staff}
           onClose={() => setIsModalOpen(false)} 
           onSuccess={() => {
             setIsModalOpen(false);
@@ -145,9 +154,9 @@ export default function Services() {
   );
 }
 
-function ServiceModal({ service, onClose, onSuccess }: { service: SalonService | null, onClose: () => void, onSuccess: () => void }) {
+function ServiceModal({ service, staffList, onClose, onSuccess }: { service: SalonService | null, staffList: Staff[], onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState<Partial<SalonService>>(
-    service || { name: '', categoryId: '', description: '', price: 0, duration: 30, active: true }
+    service || { name: '', categoryId: '', description: '', price: 0, duration: 30, active: true, commissionType: 'PERCENTAGE', commissionValue: 0, eligibleStaffIds: [] }
   );
   const [loading, setLoading] = useState(false);
 
@@ -198,9 +207,58 @@ function ServiceModal({ service, onClose, onSuccess }: { service: SalonService |
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <textarea value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full p-2 border rounded-lg" />
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Commission Type</label>
+              <select 
+                value={formData.commissionType || 'PERCENTAGE'} 
+                onChange={e => setFormData({...formData, commissionType: e.target.value as 'PERCENTAGE' | 'FIXED'})} 
+                className="w-full p-2 border rounded-lg"
+              >
+                <option value="PERCENTAGE">Percentage (%)</option>
+                <option value="FIXED">Fixed Amount (₹)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Commission Value</label>
+              <input 
+                type="number" 
+                value={formData.commissionValue || 0} 
+                onChange={e => setFormData({...formData, commissionValue: Number(e.target.value)})} 
+                className="w-full p-2 border rounded-lg" 
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Eligible Staff</label>
+            <div className="max-h-32 overflow-y-auto border rounded-lg p-2 space-y-1">
+              {staffList.map(s => (
+                <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input 
+                    type="checkbox" 
+                    checked={(formData.eligibleStaffIds || []).includes(s.id)}
+                    onChange={(e) => {
+                      const current = formData.eligibleStaffIds || [];
+                      if (e.target.checked) {
+                        setFormData({...formData, eligibleStaffIds: [...current, s.id]});
+                      } else {
+                        setFormData({...formData, eligibleStaffIds: current.filter(id => id !== s.id)});
+                      }
+                    }}
+                  />
+                  {s.name} ({s.role})
+                </label>
+              ))}
+              {staffList.length === 0 && <span className="text-sm text-slate-400">No staff found</span>}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Leave all unchecked to allow all staff.</p>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
             <input type="checkbox" id="active" checked={formData.active !== false} onChange={e => setFormData({...formData, active: e.target.checked})} />
-            <label htmlFor="active">Active</label>
+            <label htmlFor="active" className="text-sm font-medium text-slate-700">Active</label>
           </div>
           
           <div className="pt-4 flex justify-end gap-2">

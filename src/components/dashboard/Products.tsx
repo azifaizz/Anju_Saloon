@@ -284,7 +284,7 @@ const normalizeGst = (gst: string) => {
 };
 
 const Products = () => {
-  const { products: globalProducts, wholesaleProducts: globalWholesale, vendors: globalVendors, weavers, loading: globalLoading, refreshProducts, refreshVendors, isSyncing } = useGlobalData();
+  const { products: globalProducts, vendors: globalVendors, loading: globalLoading, refreshProducts, refreshVendors, isSyncing } = useGlobalData();
 
   // Combine all products for a unified view
   const allProducts = React.useMemo(() => [
@@ -1004,31 +1004,16 @@ const Products = () => {
 
     for (const p of productsToUpload) {
       try {
-        // Cross-service uniqueness check
-        if (p.systemType === 'Wholesale') {
-          const existing = await weaverProductApi.getByBarcode(p.barcode).catch(() => null);
-          if (existing?.data) {
-            errorCount++;
-            toast.error(`Barcode ${p.barcode} already exists in Retail.`);
-            continue;
-          }
-          const res = await weaverProductApi.add(p);
-          const newId = res.data?.id || p.id;
-          if (p.imageFile && newId) {
-            await weaverProductApi.uploadImage(newId, p.imageFile);
-          }
-        } else {
-          const existing = await productApi.getByBarcode(p.barcode).catch(() => null);
-          if (existing?.data) {
-            errorCount++;
-            toast.error(`Barcode ${p.barcode} already exists in Wholesale.`);
-            continue;
-          }
-          const res = await productApi.add(p);
-          const newId = res.data?.id || p.id;
-          if (p.imageFile && newId) {
-            await productApi.uploadImage(newId, p.imageFile);
-          }
+        const existing = await productApi.getByBarcode(p.barcode).catch(() => null);
+        if (existing?.data) {
+          errorCount++;
+          toast.error(`Barcode ${p.barcode} already exists.`);
+          continue;
+        }
+        const res = await productApi.add(p);
+        const newId = res.data?.id || p.id;
+        if (p.imageFile && newId) {
+          await productApi.uploadImage(newId, p.imageFile);
         }
         successCount++;
       } catch (err: any) {
@@ -1183,7 +1168,7 @@ const Products = () => {
     <div className="space-y-6 pb-12">
       <ConfirmationDialog />
       <div className="flex items-center gap-3">
-        <h1 className="text-3xl font-bold text-gray-800">Stock / Products (Total Stock: {totalStock})</h1>
+        <h1 className="text-3xl font-bold text-gray-800">Retail Products (Total Stock: {totalStock})</h1>
         <SyncIndicator isSyncing={isSyncing} />
       </div>
       {error && <div className="p-4 text-red-600 bg-red-100 rounded-md">{error}</div>}
@@ -1592,7 +1577,7 @@ const Products = () => {
         </div>
       )}
 
-      {isMultiAddModalOpen && (<MultiProductFormModal vendors={globalVendors} weavers={weavers} categories={categories} onSave={handleSaveMultipleProducts} onClose={() => setIsMultiAddModalOpen(false)} defaultGst={defaultGst} shopName={shopName} isSaving={isLoading} />)}
+      {isMultiAddModalOpen && (<MultiProductFormModal vendors={globalVendors} categories={categories} onSave={handleSaveMultipleProducts} onClose={() => setIsMultiAddModalOpen(false)} defaultGst={defaultGst} shopName={shopName} isSaving={isLoading} />)}
 
       {isSaving && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center backdrop-blur-sm">

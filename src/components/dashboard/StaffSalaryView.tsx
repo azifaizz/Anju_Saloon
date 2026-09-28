@@ -436,7 +436,7 @@ const StaffSalaryView = () => {
                                                     <th className="p-3">Date</th>
                                                     <th className="p-3">Bill ID</th>
                                                     <th className="p-3 text-right">Sale Amount (₹)</th>
-                                                    <th className="p-3 text-right">Commission (5%)</th>
+                                                    <th className="p-3 text-right">Commission Earned</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">

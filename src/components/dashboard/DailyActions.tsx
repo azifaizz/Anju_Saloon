@@ -121,12 +121,11 @@ const DailyActions = () => {
                     return;
                 }
 
-                const [summaryRes, tallyRes, billsRes, staffCommRes, brokerCommRes] = await Promise.all([
+                const [summaryRes, tallyRes, billsRes, staffCommRes] = await Promise.all([
                     daybookApi.getSummary(undefined, startDate, endDate),
                     daybookApi.getTally(startDate),
                     billingApi.getAll(), // Use getAll and filter locally to ensure nothing is missed
-                    staffApi.getAllCommissions().catch(() => ({ data: [] })),
-                    brokerApi.getAllCommissions().catch(() => ({ data: [] })) // Fallback if backend not ready
+                    staffApi.getAllCommissions().catch(() => ({ data: [] }))
                 ]);
 
                 if (summaryRes.data) {
@@ -144,9 +143,6 @@ const DailyActions = () => {
                 if (staffCommRes.data) {
                     const staffData = Array.isArray(staffCommRes.data) ? staffCommRes.data : ((staffCommRes.data as any).data || (staffCommRes.data as any).commissions || []);
                     allCommissions = [...allCommissions, ...(staffData as unknown as Commission[])];
-                }
-                if (brokerCommRes.data && Array.isArray(brokerCommRes.data)) {
-                    allCommissions = [...allCommissions, ...brokerCommRes.data];
                 }
 
                 // Filter out commissions to only keep PAID and within date range
@@ -275,10 +271,9 @@ const DailyActions = () => {
                     end = format(new Date(selectedDate.getFullYear(), 11, 31), 'yyyy-MM-dd');
                 }
 
-                const [res, staffCommRes, brokerCommRes] = await Promise.all([
+                const [res, staffCommRes] = await Promise.all([
                     daybookApi.getRange(start, end),
-                    staffApi.getAllCommissions(),
-                    brokerApi.getAllCommissions().catch(() => ({ data: [] }))
+                    staffApi.getAllCommissions()
                 ]);
                 const rawData = res.data?.dailyBreakdown || res.data?.chartData || [];
 
@@ -305,9 +300,6 @@ const DailyActions = () => {
                 if (staffCommRes.data) {
                     const staffData = Array.isArray(staffCommRes.data) ? staffCommRes.data : ((staffCommRes.data as any).data || (staffCommRes.data as any).commissions || []);
                     allCommissions = [...allCommissions, ...staffData];
-                }
-                if (brokerCommRes.data && Array.isArray(brokerCommRes.data)) {
-                    allCommissions = [...allCommissions, ...brokerCommRes.data];
                 }
                 const rangeCommissions = allCommissions.filter(c => c.status === 'PAID');
 
@@ -685,8 +677,8 @@ const DailyActions = () => {
         const commTrans = commissions.map(c => {
             const method = (c.paymentMethod || 'Cash');
             const isStaffComm = !!(c.staffId || c.staffName || c.staffCommissionAmount);
-            const commTypeStr = isStaffComm ? 'Staff commission' : 'Broker Commission';
-            const name = c.staffName || (c as any).brokerName || 'Unknown';
+            const commTypeStr = 'Staff Commission';
+            const name = c.staffName || 'Unknown';
             return {
                 id: c.id,
                 type: 'EXPENSE',

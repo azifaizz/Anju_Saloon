@@ -47,7 +47,7 @@ const Header = ({ onLoginClick }: HeaderProps) => {
       <nav className="container flex items-center justify-between py-5">
         <div
           onClick={onLoginClick}
-          className="text-2xl font-bold tracking-tighter cursor-pointer text-gradient-silk"
+          className="text-2xl font-bold tracking-tighter cursor-pointer text-gradient-salon"
         >
           Anjus Beauty Saloon
         </div>
@@ -57,7 +57,7 @@ const Header = ({ onLoginClick }: HeaderProps) => {
             <li key={link.id}>
               <a
                 href={`#${link.id}`}
-                className="font-medium text-white transition-colors duration-300 hover:text-gradient-silk"
+                className="font-medium text-white transition-colors duration-300 hover:text-gradient-salon"
               >
                 {link.title}
               </a>

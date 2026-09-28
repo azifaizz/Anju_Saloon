@@ -65,9 +65,9 @@ const Hero = () => {
           transition={{ duration: 0.8, delay: 0.2 }}
         >
           <h1 className="mb-6 font-serif text-4xl font-black leading-tight text-white drop-shadow-xl sm:text-5xl md:text-6xl lg:text-7xl">
-            Timeless Elegance in
-            <span className="mt-2 block animate-shimmer bg-[length:200%_auto] text-gradient-silk">
-              Every Thread
+            Timeless Beauty in
+            <span className="mt-2 block animate-shimmer bg-[length:200%_auto] text-gradient-salon">
+              Every Look
             </span>
           </h1>
         </motion.div>
@@ -77,8 +77,8 @@ const Hero = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
         >
-          Discover the finest collection of silk sarees, cotton sarees, and
-          dress materials crafted with tradition and love.
+          Discover premium salon services, expert styling, and professional
+          beauty products crafted for your perfect look.
         </motion.p>
       </div>
     </section>

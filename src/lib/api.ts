@@ -34,23 +34,23 @@ const firestoreAdapter = async (config: any) => {
 
   try {
     if (url.includes('/products/all') && method === 'get') {
-      const snap = await getDocs(collection(db, 'services'));
+      const snap = await getDocs(collection(db, 'products'));
       return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }
     if (url.includes('/products/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      const ref = await addDoc(collection(db, 'services'), parsedData);
+      const ref = await addDoc(collection(db, 'products'), parsedData);
       return respond({ id: ref.id, ...parsedData });
     }
     if (url.includes('/products/update') && method === 'patch') {
       const id = url.split('/').pop();
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      if (id) await updateDoc(doc(db, 'services', id), parsedData);
+      if (id) await updateDoc(doc(db, 'products', id), parsedData);
       return respond({ id, ...parsedData });
     }
     if (url.includes('/products/delete') && method === 'delete') {
       const id = url.split('/').pop();
-      if (id) await deleteDoc(doc(db, 'services', id));
+      if (id) await deleteDoc(doc(db, 'products', id));
       return respond({ success: true });
     }
     if (url.includes('/products/categories') && method === 'get') {
@@ -60,7 +60,7 @@ const firestoreAdapter = async (config: any) => {
     if (url.includes('/products/barcode/') && method === 'get') {
       const barcode = url.split('/products/barcode/')[1];
       if (!barcode) return respond(null);
-      const q = query(collection(db, 'services'), where('barcode', '==', decodeURIComponent(barcode)));
+      const q = query(collection(db, 'products'), where('barcode', '==', decodeURIComponent(barcode)));
       const snap = await getDocs(q);
       if (snap.empty) return respond(null);
       return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
@@ -68,23 +68,23 @@ const firestoreAdapter = async (config: any) => {
     
     // Salon Services
     if (url.includes('/salon-services/all') && method === 'get') {
-      const snap = await getDocs(collection(db, 'salon_services'));
+      const snap = await getDocs(collection(db, 'services'));
       return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }
     if (url.includes('/salon-services/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      const ref = await addDoc(collection(db, 'salon_services'), parsedData);
+      const ref = await addDoc(collection(db, 'services'), parsedData);
       return respond({ id: ref.id, ...parsedData });
     }
     if (url.includes('/salon-services/update') && method === 'patch') {
       const id = url.split('/').pop();
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      if (id) await updateDoc(doc(db, 'salon_services', id), parsedData);
+      if (id) await updateDoc(doc(db, 'services', id), parsedData);
       return respond({ id, ...parsedData });
     }
     if (url.includes('/salon-services/delete') && method === 'delete') {
       const id = url.split('/').pop();
-      if (id) await deleteDoc(doc(db, 'salon_services', id));
+      if (id) await deleteDoc(doc(db, 'services', id));
       return respond({ success: true });
     }
     if (url.includes('/salon-services/categories') && method === 'get') {
@@ -123,6 +123,43 @@ const firestoreAdapter = async (config: any) => {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
       const ref = await addDoc(collection(db, 'staff'), parsedData);
       return respond({ id: ref.id, ...parsedData });
+    }
+
+    // Commissions
+    if (url.includes('/staff/commissions/all') && method === 'get') {
+      const snap = await getDocs(collection(db, 'staff_commissions'));
+      let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const urlObj = new URL('http://localhost' + url);
+      const yearMonth = urlObj.searchParams.get('yearMonth');
+      if (yearMonth) {
+        results = results.filter((c: any) => c.date && c.date.startsWith(yearMonth));
+      }
+      return respond(results);
+    }
+    if (url.includes('/staff/commissions/') && method === 'get' && !url.includes('/all')) {
+      // /staff/commissions/:staffId
+      const parts = url.split('?')[0].split('/');
+      const staffId = parts[parts.length - 1];
+      const snap = await getDocs(collection(db, 'staff_commissions'));
+      let results = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((c: any) => c.staffId === staffId);
+      const urlObj = new URL('http://localhost' + url);
+      const yearMonth = urlObj.searchParams.get('yearMonth');
+      if (yearMonth) {
+        results = results.filter((c: any) => c.date && c.date.startsWith(yearMonth));
+      }
+      return respond(results);
+    }
+    if (url.includes('/staff/commissions') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'staff_commissions'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/staff/commissions/') && url.includes('/pay') && method === 'patch') {
+      const parts = url.split('?')[0].split('/');
+      // /staff/commissions/:id/pay
+      const id = parts[parts.length - 2];
+      await updateDoc(doc(db, 'staff_commissions', id), { status: 'PAID' });
+      return respond({ id, status: 'PAID' });
     }
     
     // Appointments
@@ -294,6 +331,7 @@ export const staffApi = {
   getStaffCommissions: (staffId: string, yearMonth?: string) =>
     staffService.get<Commission[]>(`/staff/commissions/${staffId}${yearMonth ? `?yearMonth=${yearMonth}` : ''}`),
   payCommission: (id: string, paymentMethod?: string) => staffService.patch(`/staff/commissions/${id}/pay${paymentMethod ? `?paymentMethod=${paymentMethod}` : ''}`),
+  addCommission: (data: any) => staffService.post('/staff/commissions', data),
 };
 
 export interface SalarySlip {
@@ -553,6 +591,9 @@ export interface SalonService {
   price: number;
   duration?: number; // duration in minutes
   active: boolean;
+  commissionType?: 'PERCENTAGE' | 'FIXED';
+  commissionValue?: number;
+  eligibleStaffIds?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -566,6 +607,9 @@ const mapSalonServiceFromBackend = (s: any): SalonService => {
     price: parseFloat(s.price || 0) || 0,
     active: s.active !== undefined ? s.active : true,
     duration: parseInt(s.duration || 0) || 0,
+    commissionType: s.commissionType || 'PERCENTAGE',
+    commissionValue: parseFloat(s.commissionValue || 0) || 0,
+    eligibleStaffIds: Array.isArray(s.eligibleStaffIds) ? s.eligibleStaffIds : [],
   };
 };
 

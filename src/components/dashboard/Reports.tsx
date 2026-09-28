@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { auth } from '@/lib/firebase';
-import { billingApi, rawMaterialApi, viewerApi, manufacturingApi, polishingApi, Bill, BillDetails, Product } from '@/lib/api';
+import { billingApi, Bill, BillDetails, Product } from '@/lib/api';
 import { Download, ShoppingCart, TrendingUp, Truck, Filter, Lock } from 'lucide-react';
 import { utils, writeFile } from 'xlsx';
 import { useGlobalData } from '@/context/GlobalDataContext';
 
-type ReportTab = 'sales' | 'purchase' | 'profit';
+type ReportTab = 'sales' | 'services' | 'products' | 'staff' | 'inventory' | 'profit';
 type PaymentMethod = 'all' | 'cash' | 'card' | 'upi' | 'cash + upi' | 'other';
 type SystemType = 'All' | 'Retail';
 
@@ -383,7 +383,7 @@ const Reports = () => {
       setHiddenBills(estimates);
       const validBills = validForReport;
 
-      if (activeTab === 'sales') {
+      if (['sales', 'services', 'products'].includes(activeTab)) {
         let serial = 1;
         const salesData = validBills
           .sort((a, b) => {
@@ -397,6 +397,12 @@ const Reports = () => {
             return billItems
               .filter(item => isValidItem(item, bill))
               .filter(item => filterByPayment(item, bill))
+              .filter(item => {
+                const isService = (item as any).type?.toUpperCase() === 'SERVICE';
+                if (activeTab === 'services') return isService;
+                if (activeTab === 'products') return !isService;
+                return true;
+              })
               .map(item => {
                 const unitPrice = parseFloatSafe(item.unitPrice);
                 const subtotal = unitPrice * item.quantity;
@@ -407,7 +413,8 @@ const Reports = () => {
                   'S.No': serial++,
                   'Bill ID': bill.id || (bill as any)._id || '',
                   Date: parsedDate ? parsedDate.toLocaleDateString('en-GB') : '-',
-                  Product: item.productName,
+                  Customer: bill.customerName || 'Walk-in',
+                  Item: item.productName,
                   Type: (item as any).type?.toUpperCase() === 'SERVICE' ? 'Service' : 'Product',
                   Quantity: item.quantity,
                   Price: (unitPrice || 0).toFixed(2),
@@ -420,10 +427,44 @@ const Reports = () => {
               });
           });
         setData(salesData);
-      } else if (activeTab === 'purchase') {
+      } else if (activeTab === 'staff') {
+        let serial = 1;
+        const staffData = validBills
+          .sort((a, b) => {
+            const dA = parseDateSafe(a.createdAt || (a as any).date || (a as any).billDate);
+            const dB = parseDateSafe(b.createdAt || (b as any).date || (b as any).billDate);
+            return (dB?.getTime() || 0) - (dA?.getTime() || 0);
+          })
+          .flatMap(bill => {
+            const billItems = bill.items || (bill as any).billDetails || [];
+            const parsedDate = parseDateSafe(bill.createdAt || (bill as any).date || (bill as any).billDate);
+            return billItems
+              .filter(item => isValidItem(item, bill))
+              .filter(item => filterByPayment(item, bill))
+              .filter(item => (item as any).staffId) // Only items with assigned staff
+              .map(item => {
+                const unitPrice = parseFloatSafe(item.unitPrice);
+                const subtotal = unitPrice * item.quantity;
+                const discountAmount = parseFloatSafe(item.discountAmount || 0);
+                const totalExGst = subtotal - discountAmount;
+                return {
+                  'S.No': serial++,
+                  'Staff': (item as any).staffName || '-',
+                  'Bill ID': bill.id || '',
+                  Date: parsedDate ? parsedDate.toLocaleDateString('en-GB') : '-',
+                  Service: item.productName,
+                  'Service Amount': (totalExGst || 0).toFixed(0),
+                  'Commission Type': (item as any).commissionType || '-',
+                  'Commission Value': (item as any).commissionValue || '0',
+                  'Commission Earned': ((item as any).staffCommissionAmount || 0).toFixed(0),
+                };
+              });
+          });
+        setData(staffData);
+      } else if (activeTab === 'inventory') {
         const soldByProductId = buildSoldQuantityByProductId(globalBills, productsToUse);
         let serial = 1;
-        const purchaseData = productsToUse
+        const inventoryData = productsToUse
           .filter(p => isWithinRange(p.createdAt) && filterBySystemType(p))
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .map(p => {
@@ -433,20 +474,18 @@ const Reports = () => {
             return {
               'S.No': serial++,
               Date: new Date(p.createdAt).toLocaleDateString('en-GB'),
-              Supplier: p.vendorName || (p as any).weaverName || '-',
-              'Supplier ID': p.vendorId || (p as any).weaverId || '-',
-              'Bill No': p.billNo || '-',
+              Supplier: p.vendorName || '-',
               Product: p.name,
-              'Product ID': p.id,
-              Barcode: p.barcode || p.id,
               Category: p.category,
               Price: (p.purchaseRate || 0).toFixed(2),
               GST: (gst || 0).toFixed(2),
-              Quantity: purchasedQty,
+              'Stock In': purchasedQty,
+              'Sold': soldByProductId.get(p.id) || 0,
+              'Current Stock': p.stockQuantity,
               Total: (cost || 0).toFixed(0),
             };
           });
-        setData(purchaseData);
+        setData(inventoryData);
       } else if (activeTab === 'profit') {
         let serial = 1;
         const profitData = validBills
@@ -477,16 +516,14 @@ const Reports = () => {
                   'Bill ID': bill.id || (bill as any)._id || '',
                   Date: parsedDate ? parsedDate.toLocaleDateString('en-GB') : '-',
                   Category: product.category || '-',
-                  Product: item.productName,
+                  Item: item.productName,
                   Type: (item as any).type?.toUpperCase() === 'SERVICE' ? 'Service' : 'Product',
                   Quantity: item.quantity,
                   Purchase: (purchaseCost || 0).toFixed(0),
                   Sold: (soldExGst || 0).toFixed(0),
                   'Discount (₹)': (discountAmount || 0).toFixed(0),
-                  'Discount (%)': discountPercent,
                   'Profit (₹)': (profitAmount || 0).toFixed(0),
                   'Profit (%)': (profitPercent || "0.00") + '%',
-                  'Customer Mode': (bill as any).customerMode || 'WALK-IN',
                   'Payment Method': getDisplayPaymentMethod(item, bill),
                 };
               });
@@ -507,7 +544,7 @@ const Reports = () => {
 
   const exportExcel = () => {
     if (!filteredData.length) { toast.error('No data.'); return; }
-    const numericKeys: string[] = activeTab === 'sales' ? ['Quantity', 'Price', 'Discount (₹)', 'GST', 'Total'] : activeTab === 'profit' ? ['Quantity', 'Purchase', 'Sold', 'Discount (₹)', 'Profit (₹)'] : ['Quantity', 'Price', 'GST', 'Total'];
+    const numericKeys: string[] = ['Quantity', 'Price', 'Discount (₹)', 'GST', 'Total', 'Service Amount', 'Commission Earned'];
     const totals: any = { 'S.No': 'Total' };
     filteredData.forEach(row => numericKeys.forEach(key => {
       const val = parseFloat(String(row[key] ?? '0').replace('₹', '').replace('%', '').trim());
@@ -676,10 +713,13 @@ const Reports = () => {
         <span className="ml-auto text-blue-900 font-extrabold text-2xl tracking-wide">Count: {new Set(filteredData.map(r => r['Bill ID'] || r['Barcode'])).size}</span>
       </div>
 
-      <div className="bg-white p-2 rounded-lg shadow-sm flex gap-2">
-        <Tab icon={ShoppingCart} label="Sales" active={activeTab === 'sales'} onClick={() => setActiveTab('sales')} />
+      <div className="bg-white p-2 rounded-lg shadow-sm flex gap-2 overflow-x-auto">
+        <Tab icon={ShoppingCart} label="All Sales" active={activeTab === 'sales'} onClick={() => setActiveTab('sales')} />
+        <Tab icon={TrendingUp} label="Service Sales" active={activeTab === 'services'} onClick={() => setActiveTab('services')} />
+        <Tab icon={ShoppingCart} label="Product Sales" active={activeTab === 'products'} onClick={() => setActiveTab('products')} />
+        <Tab icon={TrendingUp} label="Staff Commissions" active={activeTab === 'staff'} onClick={() => setActiveTab('staff')} />
+        <Tab icon={Truck} label="Inventory" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
         <Tab icon={TrendingUp} label="Profit" active={activeTab === 'profit'} onClick={() => setActiveTab('profit')} />
-        <Tab icon={Truck} label="Purchase" active={activeTab === 'purchase'} onClick={() => setActiveTab('purchase')} />
       </div>
 
       {isLoading ? <div className="text-center py-20">Loading...</div> : <ReportTable data={filteredData} activeTab={activeTab} totalBills={totalBills} />}

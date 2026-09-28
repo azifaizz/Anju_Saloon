@@ -87,7 +87,7 @@ const Contact = () => {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
             >
-              Get in <span className="text-gradient-silk">Touch</span>
+              Get in <span className="text-gradient-salon">Touch</span>
             </motion.h2>
             <motion.p
               className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed"
@@ -121,7 +121,7 @@ const Contact = () => {
                 >
                   <motion.div
                     animate={floatAnimation}
-                    className="p-4 mb-4 text-white rounded-lg bg-gradient-silk shadow-md"
+                    className="p-4 mb-4 text-white rounded-lg bg-gradient-salon shadow-md"
                     style={{ transform: "translateZ(20px)" }}
                   >
                     <Icon size={32} />

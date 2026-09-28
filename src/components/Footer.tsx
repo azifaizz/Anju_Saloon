@@ -16,7 +16,7 @@ const Footer = () => {
         <div className="animated-border-advanced p-8 md:p-12 bg-white/50 backdrop-blur-xl rounded-2xl shadow-elegant">
           <div className="grid md:grid-cols-3 gap-12 mb-10">
             <div>
-              <h3 className="text-3xl font-serif font-bold text-gradient-silk mb-4">
+              <h3 className="text-3xl font-serif font-bold text-gradient-salon mb-4">
                 Anjus Beauty Saloon
               </h3>
               <p className="text-gray-600 leading-relaxed">
@@ -32,7 +32,7 @@ const Footer = () => {
                   <li key={link.name}>
                     <a
                       href={link.href}
-                      className="text-gray-600 hover:text-gradient-silk transition-smooth hover:translate-x-1 inline-block"
+                      className="text-gray-600 hover:text-gradient-salon transition-smooth hover:translate-x-1 inline-block"
                     >
                       {link.name}
                     </a>

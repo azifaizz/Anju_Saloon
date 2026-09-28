@@ -50,7 +50,7 @@ app.post("/api/process-billing", async (req, res) => {
         let truePrice = item.price; // fallback
         
         try {
-          const collectionName = item.type === 'service' ? 'salon_services' : 'services';
+          const collectionName = item.type === 'service' ? 'services' : 'products';
           const docSnap = await db.collection(collectionName).doc(item.id).get();
           
           if (docSnap.exists) {

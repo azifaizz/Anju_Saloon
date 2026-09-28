@@ -23,7 +23,7 @@ const Collections = () => {
         <div className="animated-border-advanced p-8 md:p-12 bg-white/50 backdrop-blur-xl rounded-2xl shadow-elegant">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-gray-900">
-              Our <span className="text-gradient-silk">Collections</span>
+              Our <span className="text-gradient-salon">Collections</span>
             </h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
               Explore our carefully curated selection of professional salon services and
@@ -52,7 +52,7 @@ const Collections = () => {
                   <p className="text-gray-600 mb-4">{collection.description}</p>
                   <a
                     href="#contact"
-                    className="font-bold text-gradient-silk hover:opacity-80 transition-opacity"
+                    className="font-bold text-gradient-salon hover:opacity-80 transition-opacity"
                   >
                     Enquire Now →
                   </a>

@@ -33,7 +33,7 @@ const About = () => {
     {
       icon: Heart,
       title: "Passion for Quality",
-      description: "Every piece is carefully selected to ensure the highest quality and craftsmanship.",
+      description: "Every treatment and product is carefully selected to ensure the highest quality and satisfaction.",
     },
     {
       icon: Award,
@@ -53,7 +53,7 @@ const About = () => {
         <div className="animated-border-advanced p-8 md:p-12 bg-white/50 backdrop-blur-xl rounded-2xl shadow-elegant">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-gray-900">
-              About <span className="text-gradient-silk">Anjus Beauty Saloon</span>
+              About <span className="text-gradient-salon">Anjus Beauty Saloon</span>
             </h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
               For years, we have been dedicated to bringing the finest
@@ -79,7 +79,7 @@ const About = () => {
                   variants={cardVariants} // Each card gets the new 3D flip variant
                   className="text-center p-6 bg-white/60 backdrop-blur-sm rounded-xl shadow-soft hover:shadow-elegant transition-shadow duration-300 border border-white/50"
                 >
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-silk mb-5 shadow-md animate-float">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-salon mb-5 shadow-md animate-float">
                     <Icon className="w-8 h-8 text-white" />
                   </div>
                   <h3 className="text-2xl font-serif font-bold mb-3 text-gray-800">
