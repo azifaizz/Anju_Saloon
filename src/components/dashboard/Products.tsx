@@ -1071,28 +1071,28 @@ const Products = () => {
             </button>
           </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap items-center gap-2 mt-4 md:mt-0 w-full md:w-auto justify-end">
           {Object.keys(selectedProducts).length > 0 && (
-            <button onClick={handlePrintBarcodes} className="px-3 py-1.5 text-sm text-sm bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 flex items-center gap-2">
+            <button onClick={handlePrintBarcodes} className="px-3 py-1.5 text-sm bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 flex items-center gap-2">
               <Printer size={20} /> Print Selected Barcodes
             </button>
           )}
           {isAdmin && (
             <>
-              <button onClick={handleDownloadTemplate} className="px-3 py-1.5 text-sm text-sm bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 flex items-center gap-2">
-                <Download size={20} /> Template
+              <button onClick={handleDownloadTemplate} className="px-3 py-1.5 text-sm bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 flex items-center gap-2 whitespace-nowrap">
+                <Download size={18} /> Template
               </button>
-              <button onClick={handleUploadClick} className="px-3 py-1.5 text-sm text-sm bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 flex items-center gap-2">
-                <Upload size={20} /> Upload CSV
+              <button onClick={handleUploadClick} className="px-3 py-1.5 text-sm bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 flex items-center gap-2 whitespace-nowrap">
+                <Upload size={18} /> Upload CSV
               </button>
-              <button onClick={() => setCategoryModalOpen(true)} className="px-3 py-1.5 text-sm text-sm bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 flex items-center gap-2">
-                <Layers size={20} /> Manage Categories
+              <button onClick={() => setCategoryModalOpen(true)} className="px-3 py-1.5 text-sm bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 flex items-center gap-2 whitespace-nowrap">
+                <Layers size={18} /> Categories
               </button>
-              <button onClick={() => handleOpenModal(null)} className="px-3 py-1.5 text-sm text-sm bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                <PlusCircle size={20} /> Add Product
+              <button onClick={() => handleOpenModal(null)} className="px-3 py-1.5 text-sm bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2 whitespace-nowrap">
+                <PlusCircle size={18} /> Add Product
               </button>
-              <button onClick={() => setIsMultiAddModalOpen(true)} className="px-3 py-1.5 text-sm text-sm bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 flex items-center gap-2">
-                <ListPlus size={20} /> Add Products
+              <button onClick={() => setIsMultiAddModalOpen(true)} className="px-3 py-1.5 text-sm bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 flex items-center gap-2 whitespace-nowrap">
+                <ListPlus size={18} /> Add Products
               </button>
             </>
           )}

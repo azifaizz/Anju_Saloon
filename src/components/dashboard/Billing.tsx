@@ -940,7 +940,11 @@ const Billing: React.FC = () => {
         ...salonServices.map(s => ({ ...standardizeProduct(s), type: 'SERVICE' }))
       ];
       const availableProducts = allProducts.filter(p => (p.availabilityStatus || 'AVAILABLE') === 'AVAILABLE' || p.type === 'SERVICE');
-      setSearchResults(availableProducts);
+      
+      // Deduplicate by ID
+      const uniqueAvailableProducts = Array.from(new Map(availableProducts.map(p => [p.id, p])).values());
+
+      setSearchResults(uniqueAvailableProducts);
       setIsSelectionModalOpen(true);
       return;
     }
@@ -993,7 +997,9 @@ const Billing: React.FC = () => {
       ...salonServices.map(s => ({ ...standardizeProduct(s), type: 'SERVICE' }))
     ];
     const availableProducts = allProducts.filter(p => (p.availabilityStatus || 'AVAILABLE') === 'AVAILABLE' || p.type === 'SERVICE');
-    const matches = availableProducts.filter(p =>
+    const uniqueAvailableProducts = Array.from(new Map(availableProducts.map(p => [p.id, p])).values());
+
+    const matches = uniqueAvailableProducts.filter(p =>
       (p.barcode && normalizeId(p.barcode) === normalizedInput) ||
       (p.id && normalizeId(p.id) === normalizedInput) ||
       (p.name && p.name.toLowerCase().includes(barcode.toLowerCase()))
