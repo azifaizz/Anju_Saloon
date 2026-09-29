@@ -52,6 +52,7 @@ const PrintedBills: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"BILL">("BILL");
   const [data, setData] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -67,14 +68,14 @@ const PrintedBills: React.FC = () => {
   const handleCancelBill = (id: string) => {
     confirm("Are you sure you want to cancel this bill? This will restore stock, reverse commissions, and void the revenue.", async () => {
       try {
-        setLoading(true);
+        setProcessingId(id);
         await billingApi.cancelBill(id);
         toast.success("Bill cancelled successfully!");
         await refreshBills();
       } catch (err: any) {
         toast.error(err.response?.data?.error || err.message || "Failed to cancel bill");
       } finally {
-        setLoading(false);
+        setProcessingId(null);
       }
     });
   };
@@ -82,14 +83,14 @@ const PrintedBills: React.FC = () => {
   const handleRefundBill = (id: string) => {
     confirm("Are you sure you want to refund this bill? This will mark it as refunded, restore stock, and reverse commissions.", async () => {
       try {
-        setLoading(true);
+        setProcessingId(id);
         await billingApi.refundBill(id);
         toast.success("Bill refunded successfully!");
         await refreshBills();
       } catch (err: any) {
         toast.error(err.response?.data?.error || err.message || "Failed to refund bill");
       } finally {
-        setLoading(false);
+        setProcessingId(null);
       }
     });
   };
@@ -388,11 +389,7 @@ const PrintedBills: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="p-12 text-center text-gray-400 animate-pulse font-medium">Fetching records...</td>
-                </tr>
-              ) : filteredData.length > 0 ? (
+              {filteredData.length > 0 ? (
                 filteredData.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 transition-colors group">
                     <td className="p-4 font-mono font-bold text-blue-600 cursor-pointer">{item.invoiceId || item.id}</td>
@@ -414,18 +411,24 @@ const PrintedBills: React.FC = () => {
                     <td className="p-4 text-right font-bold text-gray-800">₹{item.finalAmount?.toFixed(2)}</td>
                     <td className="p-4 text-center">
                       <div className="flex justify-center gap-3">
-                        <button onClick={() => handlePrintAction(item)} title="Reprint" className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors shadow-sm"><Printer size={18} /></button>
-                         {((item as any).status || '').toUpperCase() !== 'CANCELLED' && ((item as any).status || '').toUpperCase() !== 'REFUNDED' && (
-                           <>
-                             <button onClick={() => handleRefundBill(item.id!)} title="Refund Bill" className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors shadow-sm"><RotateCcw size={18} /></button>
-                             <button onClick={() => handleCancelBill(item.id!)} title="Cancel Bill" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors shadow-sm"><Trash2 size={18} /></button>
-                           </>
-                         )}
-                         {(((item as any).status || '').toUpperCase() === 'CANCELLED' || ((item as any).status || '').toUpperCase() === 'REFUNDED') && (
-                           <span className={`px-2 py-1 rounded-full text-xs font-bold ${((item as any).status || '').toUpperCase() === 'REFUNDED' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                             {((item as any).status || '').toUpperCase()}
-                           </span>
-                         )}
+                        {processingId === item.id ? (
+                          <span className="text-gray-400 text-xs font-medium italic animate-pulse py-2">Processing...</span>
+                        ) : (
+                          <>
+                            <button onClick={() => handlePrintAction(item)} title="Reprint" className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors shadow-sm"><Printer size={18} /></button>
+                             {((item as any).status || '').toUpperCase() !== 'CANCELLED' && ((item as any).status || '').toUpperCase() !== 'REFUNDED' && (
+                               <>
+                                 <button onClick={() => handleRefundBill(item.id!)} title="Refund Bill" className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors shadow-sm"><RotateCcw size={18} /></button>
+                                 <button onClick={() => handleCancelBill(item.id!)} title="Cancel Bill" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors shadow-sm"><Trash2 size={18} /></button>
+                               </>
+                             )}
+                             {(((item as any).status || '').toUpperCase() === 'CANCELLED' || ((item as any).status || '').toUpperCase() === 'REFUNDED') && (
+                               <span className={`px-2 py-1 rounded-full text-xs font-bold ${((item as any).status || '').toUpperCase() === 'REFUNDED' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                 {((item as any).status || '').toUpperCase()}
+                               </span>
+                             )}
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
