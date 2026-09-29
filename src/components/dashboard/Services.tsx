@@ -51,6 +51,17 @@ export default function Services() {
     });
   };
 
+  const handleToggleActive = async (service: SalonService) => {
+    try {
+      const newStatus = service.active === false ? true : false;
+      await salonServiceApi.update(service.id, { active: newStatus });
+      toast.success(`Service marked as ${newStatus ? 'Active' : 'Inactive'}`);
+      refreshSalonServices();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update service status");
+    }
+  };
+
   return (
     <div className="p-6 bg-slate-50 min-h-full space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200">
@@ -130,11 +141,17 @@ export default function Services() {
                         )}
                         {isAdmin && (
                           <td className="p-4">
-                            <span className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider ${
-                              service.active !== false ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 border border-slate-200'
-                            }`}>
+                            <button 
+                              onClick={() => handleToggleActive(service)}
+                              title={`Click to mark as ${service.active !== false ? 'Inactive' : 'Active'}`}
+                              className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors border hover:shadow-sm ${
+                                service.active !== false 
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300' 
+                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
+                              }`}
+                            >
                               {service.active !== false ? 'Active' : 'Inactive'}
-                            </span>
+                            </button>
                           </td>
                         )}
                         {isAdmin && (
