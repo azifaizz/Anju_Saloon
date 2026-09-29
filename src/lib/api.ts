@@ -139,6 +139,30 @@ const firestoreAdapter = async (config: any) => {
       if (snap.empty) return respond(null);
       return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
     }
+
+    // Settings
+    if (url.includes('/settings/global') && method === 'get') {
+      const snap = await getDocs(query(collection(db, 'settings'), where('__name__', '==', 'global')));
+      if (snap.empty) {
+        const defaultSettings = {
+          shopName: 'Anjus Beauty Saloon',
+          gstNumber: '33ADFPN7561FL1ZK',
+          billMessage: 'Thank You For Your Purchasing',
+          defaultGst: '0',
+          loyaltyEnabled: false,
+          loyaltySpendRatio: 100,
+          loyaltyRedeemValue: 1
+        };
+        await setDoc(doc(db, 'settings', 'global'), defaultSettings);
+        return respond(defaultSettings);
+      }
+      return respond(snap.docs[0].data());
+    }
+    if (url.includes('/settings/global') && method === 'patch') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      await setDoc(doc(db, 'settings', 'global'), parsedData, { merge: true });
+      return respond(parsedData);
+    }
     
     // Stock Transactions
     if (url.includes('/stock-transactions/all') && method === 'get') {
@@ -1671,4 +1695,20 @@ export const customerPackageApi = {
   getByCustomer: (customerId: string) => productService.get<CustomerPackage[]>(`/customer-packages/customer/${customerId}`),
   add: (data: Partial<CustomerPackage>) => productService.post('/customer-packages/add', data),
   updateUsage: (id: string, serviceId: string, qty: number) => productService.patch(`/customer-packages/use/${id}`, { serviceId, qty }),
+};
+
+// --- Settings API ---
+export interface GlobalSettings {
+  shopName: string;
+  gstNumber: string;
+  billMessage: string;
+  defaultGst: string;
+  loyaltyEnabled: boolean;
+  loyaltySpendRatio: number;
+  loyaltyRedeemValue: number;
+}
+
+export const settingsApi = {
+  get: () => billingService.get<GlobalSettings>('/settings/global'),
+  update: (data: Partial<GlobalSettings>) => billingService.patch('/settings/global', data)
 };

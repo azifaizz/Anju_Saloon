@@ -5,7 +5,7 @@ import { useGlobalData } from "@/context/GlobalDataContext";
 import { utils, writeFile } from "xlsx";
 import { Printer, FileText, Search, FileSpreadsheet, Eye, Edit3 } from "lucide-react";
 import { motion } from "framer-motion";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
+// Removed useLocalStorage
 import { APP_CONFIG } from '@/config';
 import { BillRenderer } from "@/components/BillRenderer";
 import { mapExeBillData } from "@/utils/exeBillAdapter";
@@ -45,7 +45,8 @@ const PrintedBills: React.FC = () => {
     bills: globalBills, 
     cancelledBills: globalCancelled, 
     refreshBills, 
-    refreshCancelled 
+    refreshCancelled,
+    settings
   } = useGlobalData();
   const { confirm, ConfirmationDialog } = useConfirm();
 
@@ -95,9 +96,9 @@ const PrintedBills: React.FC = () => {
     });
   };
 
-  const [shopName] = useLocalStorage("shopName_v3", APP_CONFIG.COMPANY_NAME);
-  const [billMessage] = useLocalStorage("billMessage", "Thank You For Your Purchasing");
-  const [gstNumber] = useLocalStorage("gstNumber", "");
+  const shopName = settings?.shopName || APP_CONFIG.COMPANY_NAME;
+  const billMessage = settings?.billMessage || "Thank You For Your Purchasing";
+  const gstNumber = settings?.gstNumber || "";
 
   useEffect(() => {
     refreshBills();

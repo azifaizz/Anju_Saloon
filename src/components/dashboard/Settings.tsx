@@ -1,35 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { Save } from 'lucide-react';
-import { useEffect } from "react";
-
+import { useGlobalData } from '@/context/GlobalDataContext';
+import { settingsApi } from '@/lib/api';
 
 const Settings = () => {
-  // --- These values are set from the code and are not editable in the UI ---
-  const [shopName, setShopName] = useLocalStorage("shopName_flipflex", "Anjus Beauty Saloon");
-  const [gstNumberRaw] = useLocalStorage('gstNumber_v3', '33ADFPN7561FL1ZK');
-  // Ensure valid fallback even if undefined, null, or empty
-  const gstNumber =
-    !gstNumberRaw || gstNumberRaw === 'YOUR_GST_NUMBER_HERE'
-      ? '33ADFPN7561FL1ZK'
-      : gstNumberRaw.toString().trim();
+  const { settings, refreshSettings, loading } = useGlobalData();
 
-
-
-  // --- These values remain editable by the user ---
-  const [billMessage, setBillMessage] = useLocalStorage('billMessage', 'Thank You For Your Purchasing');
-  const [defaultGst, setDefaultGst] = useLocalStorage('defaultGst', '');
+  const [shopName, setShopName] = useState("Anjus Beauty Saloon");
+  const [gstNumber, setGstNumber] = useState('33ADFPN7561FL1ZK');
+  const [billMessage, setBillMessage] = useState('Thank You For Your Purchasing');
+  const [defaultGst, setDefaultGst] = useState('0');
   
   // Loyalty Settings
-  const [loyaltyEnabled, setLoyaltyEnabled] = useLocalStorage('loyaltyEnabled', false);
-  const [loyaltySpendRatio, setLoyaltySpendRatio] = useLocalStorage('loyaltySpendRatio', 100); // Spend amount for 1 point
-  const [loyaltyRedeemValue, setLoyaltyRedeemValue] = useLocalStorage('loyaltyRedeemValue', 1); // 1 point = X Rs
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
+  const [loyaltySpendRatio, setLoyaltySpendRatio] = useState(100);
+  const [loyaltyRedeemValue, setLoyaltyRedeemValue] = useState(1);
 
-  const handleSave = () => {
-    // Note: This only saves the editable fields, as the others cannot be changed.
-    toast.success("Settings Saved!");
+  useEffect(() => {
+    if (settings) {
+      setShopName(settings.shopName || "Anjus Beauty Saloon");
+      setGstNumber(settings.gstNumber || '33ADFPN7561FL1ZK');
+      setBillMessage(settings.billMessage || 'Thank You For Your Purchasing');
+      setDefaultGst(settings.defaultGst || '0');
+      setLoyaltyEnabled(settings.loyaltyEnabled || false);
+      setLoyaltySpendRatio(settings.loyaltySpendRatio || 100);
+      setLoyaltyRedeemValue(settings.loyaltyRedeemValue || 1);
+    }
+  }, [settings]);
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await settingsApi.update({
+        billMessage,
+        defaultGst,
+        loyaltyEnabled,
+        loyaltySpendRatio,
+        loyaltyRedeemValue
+      });
+      await refreshSettings();
+      toast.success("Settings Saved Globally!");
+    } catch (e) {
+      toast.error("Failed to save settings");
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  if (loading) return <div className="p-6">Loading settings...</div>;
 
   return (
     <div className="space-y-6">
@@ -143,8 +164,8 @@ const Settings = () => {
           </div>
 
           <div className="pt-2">
-            <button onClick={handleSave} className="px-6 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 flex items-center gap-2">
-              <Save size={18} /> Save Settings
+            <button disabled={isSaving} onClick={handleSave} className="px-6 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 flex items-center gap-2 disabled:opacity-50">
+              <Save size={18} /> {isSaving ? "Saving..." : "Save Settings"}
             </button>
           </div>
         </div>

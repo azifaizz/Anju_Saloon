@@ -12,7 +12,6 @@ import { productApi, vendorApi, stockTransactionApi, Vendor, Product as BaseProd
 import { useGlobalData } from '@/context/GlobalDataContext';
 import { useAuth } from '@/context/AuthContext';
 import Barcode from 'react-barcode';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
 import * as Papa from 'papaparse';
 import MultiProductFormModal from './MultiProductFormModal';
 import { generateSixDigitId, formatDate } from '@/lib/utils';
@@ -194,7 +193,8 @@ const Products = () => {
   const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [defaultGst] = useLocalStorage('defaultGst', 5);
+  const { settings } = useGlobalData();
+  const defaultGst = settings?.defaultGst || '5';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedProducts, setSelectedProducts] = useState<SelectedProducts>({});
   const [startDate, setStartDate] = useState('');
@@ -234,7 +234,7 @@ const Products = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(100);
-  const [shopName] = useLocalStorage('shopName_rose_boutique', 'Anjus Beauty Saloon');
+  const shopName = settings?.shopName || 'Anjus Beauty Saloon';
 
   // Helper to sort products (client-side now)
   const getSortedProducts = (list: Product[]) => {

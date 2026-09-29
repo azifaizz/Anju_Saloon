@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+// Removed useLocalStorage
 // import { db } from "@/lib/firebase"; // Removed
 // import { doc, getDoc } from "firebase/firestore"; // Removed
 import { toast } from 'react-hot-toast';
@@ -425,6 +425,7 @@ const Billing: React.FC = () => {
     refreshBills,
     refreshHolds,
     refreshCancelled,
+    settings
   } = useGlobalData();
 
   const [barcode, setBarcode] = useState("");
@@ -524,14 +525,14 @@ const Billing: React.FC = () => {
   const customerGstRef = useRef<HTMLInputElement>(null);
   const customerAddressRef = useRef<HTMLInputElement>(null);
 
-  const [shopName] = useLocalStorage('shopName_rose_boutique', 'Anjus Beauty Saloon');
-  const [gstNumberRaw] = useLocalStorage('gstNumber_v2', '33HFVPS1108J1Z0');
-  const [defaultGst] = useLocalStorage('defaultGst', '0');
+  const shopName = settings?.shopName || 'Anjus Beauty Saloon';
+  const gstNumberRaw = settings?.gstNumber || '33HFVPS1108J1Z0';
+  const defaultGst = settings?.defaultGst || '0';
 
   // Loyalty Settings
-  const [loyaltyEnabled] = useLocalStorage('loyaltyEnabled', false);
-  const [loyaltySpendRatio] = useLocalStorage('loyaltySpendRatio', 100);
-  const [loyaltyRedeemValue] = useLocalStorage('loyaltyRedeemValue', 1);
+  const loyaltyEnabled = settings?.loyaltyEnabled || false;
+  const loyaltySpendRatio = settings?.loyaltySpendRatio || 100;
+  const loyaltyRedeemValue = settings?.loyaltyRedeemValue || 1;
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
 
   const gstNumber =
@@ -539,7 +540,7 @@ const Billing: React.FC = () => {
       ? '33HFVPS1108J1Z0'
       : gstNumberRaw.toString().trim();
 
-  const [billMessage] = useLocalStorage('billMessage', 'Thank You For Your Purchasing');
+  const billMessage = settings?.billMessage || 'Thank You For Your Purchasing';
   const isSyncing = globalSyncing;
 
   const holds = React.useMemo(() => {

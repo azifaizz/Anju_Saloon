@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useCallback } from 'react';
-import { productApi, customerApi, vendorApi, staffApi, billingApi, salonServiceApi, appointmentApi, packageApi, Product, Customer, Vendor, Staff, Bill, SalonService, Appointment, SalonPackage } from '@/lib/api';
+import { productApi, customerApi, vendorApi, staffApi, billingApi, salonServiceApi, appointmentApi, packageApi, settingsApi, Product, Customer, Vendor, Staff, Bill, SalonService, Appointment, SalonPackage, GlobalSettings } from '@/lib/api';
 import { useAuth } from './AuthContext';
 import { useCachedResource } from '@/hooks/useCachedResource';
 
@@ -14,6 +14,7 @@ interface GlobalDataContextType {
     salonServices: SalonService[];
     appointments: Appointment[];
     packages: SalonPackage[];
+    settings: GlobalSettings | null;
     loading: boolean;
     isSyncing: boolean;
     refreshAll: () => Promise<void>;
@@ -27,6 +28,7 @@ interface GlobalDataContextType {
     refreshCancelled: () => Promise<void>;
     refreshAppointments: () => Promise<void>;
     refreshPackages: () => Promise<void>;
+    refreshSettings: () => Promise<void>;
 }
 
 const GlobalDataContext = createContext<GlobalDataContextType>({
@@ -40,6 +42,7 @@ const GlobalDataContext = createContext<GlobalDataContextType>({
     salonServices: [],
     appointments: [],
     packages: [],
+    settings: null,
     loading: true,
     isSyncing: false,
     refreshAll: async () => { },
@@ -53,6 +56,7 @@ const GlobalDataContext = createContext<GlobalDataContextType>({
     refreshCancelled: async () => { },
     refreshAppointments: async () => { },
     refreshPackages: async () => { },
+    refreshSettings: async () => { },
 });
 
 export const GlobalDataProvider = ({ children }: { children: React.ReactNode }) => {
@@ -129,8 +133,15 @@ export const GlobalDataProvider = ({ children }: { children: React.ReactNode }) 
         refresh: refreshPackages
     } = useCachedResource<SalonPackage[]>('global_packages', packageApi.getAll, { skip: !user, initialData: [] });
 
-    const loading = loadingProducts || loadingSalonServices || loadingCustomers || loadingVendors || loadingStaff || loadingBills || loadingHolds || loadingCancelled || loadingAppointments || loadingPackages;
-    const isSyncing = syncingProducts || syncingSalonServices || syncingCustomers || syncingVendors || syncingStaff || syncingBills || syncingHolds || syncingCancelled || syncingAppointments || syncingPackages;
+    const {
+        data: settings,
+        loading: loadingSettings,
+        isSyncing: syncingSettings,
+        refresh: refreshSettings
+    } = useCachedResource<GlobalSettings | null>('global_settings', settingsApi.get, { skip: !user, initialData: null });
+
+    const loading = loadingProducts || loadingSalonServices || loadingCustomers || loadingVendors || loadingStaff || loadingBills || loadingHolds || loadingCancelled || loadingAppointments || loadingPackages || loadingSettings;
+    const isSyncing = syncingProducts || syncingSalonServices || syncingCustomers || syncingVendors || syncingStaff || syncingBills || syncingHolds || syncingCancelled || syncingAppointments || syncingPackages || syncingSettings;
 
     const refreshAll = useCallback(async () => {
         await Promise.allSettled([
@@ -143,9 +154,10 @@ export const GlobalDataProvider = ({ children }: { children: React.ReactNode }) 
             refreshHolds(),
             refreshCancelled(),
             refreshAppointments(),
-            refreshPackages()
+            refreshPackages(),
+            refreshSettings()
         ]);
-    }, [refreshProducts, refreshSalonServices, refreshCustomers, refreshVendors, refreshStaff, refreshBills, refreshHolds, refreshCancelled, refreshAppointments, refreshPackages]);
+    }, [refreshProducts, refreshSalonServices, refreshCustomers, refreshVendors, refreshStaff, refreshBills, refreshHolds, refreshCancelled, refreshAppointments, refreshPackages, refreshSettings]);
 
     // Automatically trigger fresh fetch whenever authenticated user or role changes
     React.useEffect(() => {
@@ -165,6 +177,7 @@ export const GlobalDataProvider = ({ children }: { children: React.ReactNode }) 
         cancelledBills: Array.isArray(cancelledBills) ? cancelledBills : [],
         appointments: Array.isArray(appointments) ? appointments : [],
         packages: Array.isArray(packages) ? packages : [],
+        settings,
         loading,
         isSyncing,
         refreshAll,
@@ -177,7 +190,8 @@ export const GlobalDataProvider = ({ children }: { children: React.ReactNode }) 
         refreshHolds,
         refreshCancelled,
         refreshAppointments,
-        refreshPackages
+        refreshPackages,
+        refreshSettings
     };
 
     return <GlobalDataContext.Provider value={value}>{children}</GlobalDataContext.Provider>;
