@@ -13,6 +13,8 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { format, subDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, startOfYear, endOfMonth, endOfYear, addDays } from 'date-fns';
 import { billingApi, productApi, daybookApi, vendorApi, appointmentApi, customerApi, staffApi, Bill, Product, Vendor, DayBookEntry, Appointment, Customer, Staff } from '@/lib/api';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import LowStockProductsModal from './LowStockProductsModal';
 
 type DashboardPeriod = 'day' | 'week' | 'month' | 'year';
@@ -99,28 +101,36 @@ const DashboardOverview = () => {
 
 
   useEffect(() => {
+    let unsubscribeBills: () => void;
+    let unsubscribeDaybook: () => void;
+    
     const fetchGlobalData = async () => {
       setLoading(true);
       try {
-        const [billsRes, productsRes, vendorsRes, daybookRes, apptsRes, custRes, staffRes] = await Promise.all([
-          billingApi.getAll(),
+        const [productsRes, vendorsRes, apptsRes, custRes, staffRes] = await Promise.all([
           productApi.getAll(),
           vendorApi.getAll(),
-          daybookApi.getSummary(),
           appointmentApi.getAll(),
           customerApi.getAll(),
           staffApi.getAll()
         ]);
 
-        if (Array.isArray(billsRes.data)) setBills(billsRes.data);
         if (Array.isArray(productsRes.data)) setProducts(productsRes.data);
         if (Array.isArray(vendorsRes.data)) setVendors(vendorsRes.data);
-        if (daybookRes.data && daybookRes.data.entries) {
-          setExpenses(daybookRes.data.entries.filter((e: any) => e.type === 'EXPENSE'));
-        }
         if (Array.isArray(apptsRes.data)) setAppointments(apptsRes.data);
         if (Array.isArray(custRes.data)) setCustomers(custRes.data);
         if (Array.isArray(staffRes.data)) setStaff(staffRes.data);
+        
+        // Real-time listener for bills
+        unsubscribeBills = onSnapshot(collection(db, 'bills'), (snap) => {
+          setBills(snap.docs.map(d => ({ ...d.data(), id: d.id })) as Bill[]);
+        });
+
+        // Real-time listener for daybook (expenses)
+        unsubscribeDaybook = onSnapshot(collection(db, 'daybook'), (snap) => {
+          const entries = snap.docs.map(d => ({ ...d.data(), id: d.id })) as DayBookEntry[];
+          setExpenses(entries.filter(e => e.type === 'EXPENSE'));
+        });
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
@@ -128,6 +138,11 @@ const DashboardOverview = () => {
       }
     };
     fetchGlobalData();
+    
+    return () => {
+      if (unsubscribeBills) unsubscribeBills();
+      if (unsubscribeDaybook) unsubscribeDaybook();
+    };
   }, []);
 
   // Filter bills based on time range (Global for charts)
@@ -219,32 +234,46 @@ const DashboardOverview = () => {
   });
 
   useEffect(() => {
-    const fetchChartData = async () => {
-      try {
-        const res = await daybookApi.getRange(startDate, endDate);
-        const rawData = res.data?.chartData || res.data?.dailyBreakdown || [];
+    try {
+      const rawDataMap = new Map<string, { date: string, income: number, expense: number }>();
+      
+      dateFilteredBills.forEach(b => {
+        const bDate = b.createdAt ? new Date(b.createdAt) : new Date();
+        const dateStr = format(bDate, 'yyyy-MM-dd');
+        if (!rawDataMap.has(dateStr)) {
+          rawDataMap.set(dateStr, { date: dateStr, income: 0, expense: 0 });
+        }
+        rawDataMap.get(dateStr)!.income += (Number(b.finalAmount) || Number(b.totalAmount) || 0);
+      });
 
-        const start = startOfDay(new Date(startDate));
+      expenses.forEach(e => {
+        const eDate = e.date ? new Date(e.date) : new Date();
+        const dateStr = format(eDate, 'yyyy-MM-dd');
+        if (!rawDataMap.has(dateStr)) {
+          rawDataMap.set(dateStr, { date: dateStr, income: 0, expense: 0 });
+        }
+        rawDataMap.get(dateStr)!.expense += (Number(e.amount) || 0);
+      });
 
-        const dayData = aggregateChartData('day', rawData, start);
-        const weekData = aggregateChartData('week', rawData, start);
-        const monthData = aggregateChartData('month', rawData, start);
-        const yearData = aggregateChartData('year', rawData, start);
+      const rawData = Array.from(rawDataMap.values());
+      const start = startOfDay(new Date(startDate));
 
-        setAllPeriodsData({ day: dayData, week: weekData, month: monthData, year: yearData });
+      const dayData = aggregateChartData('day', rawData, start);
+      const weekData = aggregateChartData('week', rawData, start);
+      const monthData = aggregateChartData('month', rawData, start);
+      const yearData = aggregateChartData('year', rawData, start);
 
-        // Update the main chart view
-        if (dashboardView === 'day') setChartDataFetched(dayData);
-        else if (dashboardView === 'week') setChartDataFetched(weekData);
-        else if (dashboardView === 'month') setChartDataFetched(monthData);
-        else if (dashboardView === 'year') setChartDataFetched(yearData);
+      setAllPeriodsData({ day: dayData, week: weekData, month: monthData, year: yearData });
 
-      } catch (err) {
-        console.log("Chart data fetch issue: ", err);
-      }
-    };
-    fetchChartData();
-  }, [dashboardView, startDate, endDate]);
+      // Update the main chart view
+      if (dashboardView === 'day') setChartDataFetched(dayData);
+      else if (dashboardView === 'week') setChartDataFetched(weekData);
+      else if (dashboardView === 'month') setChartDataFetched(monthData);
+      else if (dashboardView === 'year') setChartDataFetched(yearData);
+    } catch (err) {
+      console.log("Chart data calculation issue: ", err);
+    }
+  }, [dashboardView, startDate, endDate, dateFilteredBills, expenses]);
 
 
 
