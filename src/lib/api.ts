@@ -37,6 +37,15 @@ const firestoreAdapter = async (config: any) => {
     };
     return config;
   };
+  // Helper to generate short 5-character alphanumeric ID
+  const generateShortId = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 5; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
 
   // Helper to sanitize payload before saving to Firestore
   const sanitizeForFirestore = (obj: any): any => {
@@ -303,7 +312,10 @@ const firestoreAdapter = async (config: any) => {
         }
       }
 
-      const ref = await addDoc(collection(db, 'bills'), parsedData);
+      const shortId = generateShortId();
+      parsedData.invoiceId = shortId;
+      const ref = doc(db, 'bills', shortId);
+      await setDoc(ref, parsedData);
 
       // Update customer stats (visit count, total spent, last visit) if linked
       if (linkedCustomerId) {
@@ -410,8 +422,11 @@ const firestoreAdapter = async (config: any) => {
     }
     if (url.includes('/billing/hold') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      const ref = await addDoc(collection(db, 'bills'), { ...parsedData, status: 'HOLD' });
-      return respond({ id: ref.id, ...parsedData, status: 'HOLD' });
+      const shortId = generateShortId();
+      const holdData = { ...parsedData, status: 'HOLD', invoiceId: shortId };
+      const ref = doc(db, 'bills', shortId);
+      await setDoc(ref, holdData);
+      return respond({ id: ref.id, ...holdData });
     }
     if (url.includes('/billing/update/') && method === 'patch') {
       const id = url.split('/').pop();
@@ -769,7 +784,10 @@ const firestoreAdapter = async (config: any) => {
     }
     if (url.includes('/estimations/create') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      const ref = await addDoc(collection(db, 'estimations'), parsedData);
+      const shortId = generateShortId();
+      parsedData.estimationId = shortId;
+      const ref = doc(db, 'estimations', shortId);
+      await setDoc(ref, parsedData);
       return respond({ id: ref.id, ...parsedData });
     }
     if (url.includes('/estimations/') && method === 'put') {
