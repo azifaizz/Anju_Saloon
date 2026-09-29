@@ -1055,23 +1055,29 @@ const Products = () => {
         <SyncIndicator isSyncing={isSyncing} />
       </div>
       {error && <div className="p-4 text-red-600 bg-red-100 rounded-md">{error}</div>}
-      <div className="bg-white p-6 rounded-lg shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-        <div className="flex flex-col md:flex-row flex-1 gap-4 w-full">
-          <input type="text" placeholder="Search all products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="form-input w-full md:flex-1 min-w-[200px]" />
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-gray-500 flex items-center gap-1"><Calendar size={16} /> Date:</span>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-input py-1 px-2 text-sm w-32" placeholder="Start Date" />
+      <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm flex flex-col 2xl:flex-row justify-between items-start 2xl:items-center gap-6">
+        <div className="flex flex-wrap items-center gap-4 w-full 2xl:w-auto flex-1">
+          <input 
+            type="text" 
+            placeholder="Search all products..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            className="form-input w-full md:w-auto md:flex-1 min-w-[250px]" 
+          />
+          <div className="flex flex-wrap items-center gap-2 bg-gray-50/50 p-2 rounded-lg border border-gray-100">
+            <span className="text-sm text-gray-600 font-medium flex items-center gap-1"><Calendar size={16} /> Date:</span>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-input py-1.5 px-2 text-sm w-[130px]" />
             <span className="text-gray-400">-</span>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="form-input py-1 px-2 text-sm w-32" placeholder="End Date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="form-input py-1.5 px-2 text-sm w-[130px]" />
             <button
               onClick={handleApplyFilter}
-              className="px-3 py-1 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 transition-colors"
+              className="px-4 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded-md hover:bg-blue-700 transition-colors shadow-sm"
             >
               Filter
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 mt-4 md:mt-0 w-full md:w-auto justify-end">
+        <div className="flex flex-wrap items-center gap-2 w-full 2xl:w-auto justify-start 2xl:justify-end">
           {Object.keys(selectedProducts).length > 0 && (
             <button onClick={handlePrintBarcodes} className="px-3 py-1.5 text-sm bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 flex items-center gap-2">
               <Printer size={20} /> Print Selected Barcodes
