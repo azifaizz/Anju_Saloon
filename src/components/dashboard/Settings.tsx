@@ -35,6 +35,8 @@ const Settings = () => {
     setIsSaving(true);
     try {
       await settingsApi.update({
+        shopName,
+        gstNumber,
         billMessage,
         defaultGst,
         loyaltyEnabled,
@@ -58,27 +60,27 @@ const Settings = () => {
       <div className="bg-white p-6 rounded-lg shadow-sm">
         <div className="space-y-4 max-w-lg">
 
-          {/* --- Non-Editable Shop Name Field --- */}
+          {/* --- Editable Shop Name Field --- */}
           <div>
             <label htmlFor="shopName" className="font-medium text-gray-700">Shop Name</label>
             <input
               id="shopName"
               type="text"
               value={shopName}
-              readOnly // This makes the input field non-editable
-              className="form-input mt-1 bg-gray-100 cursor-not-allowed" // Style to show it's read-only
+              onChange={(e) => setShopName(e.target.value)}
+              className="form-input mt-1"
             />
           </div>
 
-          {/* --- Non-Editable GST Number Field --- */}
+          {/* --- Editable GST Number Field --- */}
           <div>
             <label htmlFor="gstNumber" className="font-medium text-gray-700">GST Number</label>
             <input
               id="gstNumber"
               type="text"
               value={gstNumber}
-              readOnly // This makes the input field non-editable
-              className="form-input mt-1 bg-gray-100 cursor-not-allowed" // Style to show it's read-only
+              onChange={(e) => setGstNumber(e.target.value)}
+              className="form-input mt-1"
             />
           </div>
 
