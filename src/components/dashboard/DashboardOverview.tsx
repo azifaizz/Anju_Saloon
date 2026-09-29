@@ -136,7 +136,7 @@ const DashboardOverview = () => {
     const end = endOfDay(new Date(endDate));
 
     return bills.filter(bill => {
-      if (bill.status === 'CANCELLED' || bill.status === 'HOLD') return false;
+      if (bill.status === 'CANCELLED' || bill.status === 'HOLD' || bill.status === 'REFUNDED') return false;
       const billDate = new Date(bill.createdAt || new Date());
       return billDate >= start && billDate <= end;
     });

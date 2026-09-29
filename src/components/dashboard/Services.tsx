@@ -18,8 +18,8 @@ export default function Services() {
   const visibleServices = isAdmin ? salonServices : salonServices.filter(s => s.active !== false);
 
   const filteredServices = visibleServices.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (s.name && String(s.name).toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (s.description && String(s.description).toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const groupedServices = filteredServices.reduce((acc, service) => {

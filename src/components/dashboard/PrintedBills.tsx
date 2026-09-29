@@ -129,7 +129,7 @@ const PrintedBills: React.FC = () => {
 
     // Logic for tab-based filtering
     if (activeTab === "BILL") {
-        if (status === "HOLD" || status === "CANCELLED") return false;
+        if (status === "HOLD" || status === "CANCELLED" || status === "REFUNDED") return false;
         if (!status && (pm === "HOLD" || pm === "CANCELLED")) return false;
     }
 
@@ -415,10 +415,17 @@ const PrintedBills: React.FC = () => {
                     <td className="p-4 text-center">
                       <div className="flex justify-center gap-3">
                         <button onClick={() => handlePrintAction(item)} title="Reprint" className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors shadow-sm"><Printer size={18} /></button>
-                         <>
-                           <button onClick={() => handleRefundBill(item.id!)} title="Refund Bill" className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors shadow-sm"><RotateCcw size={18} /></button>
-                           <button onClick={() => handleCancelBill(item.id!)} title="Cancel Bill" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors shadow-sm"><Trash2 size={18} /></button>
-                         </>
+                         {((item as any).status || '').toUpperCase() !== 'CANCELLED' && ((item as any).status || '').toUpperCase() !== 'REFUNDED' && (
+                           <>
+                             <button onClick={() => handleRefundBill(item.id!)} title="Refund Bill" className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors shadow-sm"><RotateCcw size={18} /></button>
+                             <button onClick={() => handleCancelBill(item.id!)} title="Cancel Bill" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors shadow-sm"><Trash2 size={18} /></button>
+                           </>
+                         )}
+                         {(((item as any).status || '').toUpperCase() === 'CANCELLED' || ((item as any).status || '').toUpperCase() === 'REFUNDED') && (
+                           <span className={`px-2 py-1 rounded-full text-xs font-bold ${((item as any).status || '').toUpperCase() === 'REFUNDED' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                             {((item as any).status || '').toUpperCase()}
+                           </span>
+                         )}
                       </div>
                     </td>
                   </tr>

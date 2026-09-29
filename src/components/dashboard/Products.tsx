@@ -259,15 +259,15 @@ const Products = () => {
       const isNumber = !isNaN(searchNum) && lowerSearchTerm !== '';
 
       matchesSearch = Boolean(
-        p.name?.toLowerCase().includes(lowerSearchTerm) ||
-        p.category?.toLowerCase().includes(lowerSearchTerm) ||
-        p.id?.toString().toLowerCase().includes(lowerSearchTerm) ||
-        p.barcode?.toString().toLowerCase().includes(lowerSearchTerm) ||
-        p.vendorName?.toLowerCase().includes(lowerSearchTerm) ||
+        (p.name && String(p.name).toLowerCase().includes(lowerSearchTerm)) ||
+        (p.category && String(p.category).toLowerCase().includes(lowerSearchTerm)) ||
+        (p.id && String(p.id).toLowerCase().includes(lowerSearchTerm)) ||
+        (p.barcode && String(p.barcode).toLowerCase().includes(lowerSearchTerm)) ||
+        (p.vendorName && String(p.vendorName).toLowerCase().includes(lowerSearchTerm)) ||
         (p.price != null && String(p.price).toLowerCase().includes(lowerSearchTerm)) ||
         (isNumber && p.price === searchNum) ||
-        (p as any).productName?.toLowerCase().includes(lowerSearchTerm) ||
-        (p as any).productId?.toString().toLowerCase().includes(lowerSearchTerm) ||
+        ((p as any).productName && String((p as any).productName).toLowerCase().includes(lowerSearchTerm)) ||
+        ((p as any).productId && String((p as any).productId).toLowerCase().includes(lowerSearchTerm)) ||
         ((p as any).sellingPrice != null && String((p as any).sellingPrice).toLowerCase().includes(lowerSearchTerm)) ||
         (isNumber && (p as any).sellingPrice === searchNum)
       );

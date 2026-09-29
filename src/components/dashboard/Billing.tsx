@@ -2360,8 +2360,8 @@ const Billing: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User size={16} className="text-blue-500" /> Customer</h3>
                   {customerId && (
-                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                      ✓ Existing Customer Linked
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-sm whitespace-nowrap">
+                      ✓ Linked
                     </span>
                   )}
                 </div>

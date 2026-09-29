@@ -171,9 +171,9 @@ const Suppliers = () => {
 
 
   const filteredSuppliers = suppliers.filter(s =>
-    (s.name && s.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (s.id && s.id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (s.phone && s.phone.includes(searchTerm))
+    (s.name && String(s.name).toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (s.id && String(s.id).toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (s.phone && String(s.phone).includes(searchTerm))
   );
 
   return (

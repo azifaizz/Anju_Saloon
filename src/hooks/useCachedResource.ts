@@ -80,9 +80,11 @@ export const useCachedResource = <T>(
         if (skip) return;
 
         setIsSyncing(true);
-        // If no data yet, valid 'loading' is true. If data exists (cache), loading is false.
         // We only set loading=true if we have NO data to show.
-        setLoading(prev => !prev ? true : (!data));
+        const hasData = memoryCache.has(fullKey);
+        if (!hasData) {
+            setLoading(true);
+        }
 
         try {
             const response = await fetcher();
@@ -124,7 +126,7 @@ export const useCachedResource = <T>(
                 setIsSyncing(false);
             }
         }
-    }, [fetcher, fullKey, skip, key, data]);
+    }, [fetcher, fullKey, skip, key]);
 
     // Initial Sync Logic
     useEffect(() => {

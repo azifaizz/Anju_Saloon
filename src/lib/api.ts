@@ -25,9 +25,15 @@ const firestoreAdapter = async (config: any) => {
   const method = (config.method || 'get').toLowerCase();
   
   // Return a mock response adapter
-  const respond = (data: any) => {
+  const respond = (data: any, status: number = 200) => {
     config.adapter = async () => {
-      return { data, status: 200, statusText: 'OK', headers: {}, config, request: {} };
+      const response = { data, status, statusText: status === 200 ? 'OK' : 'Error', headers: {}, config, request: {} };
+      if (status >= 400) {
+        const error: any = new Error(data?.error || 'Request failed');
+        error.response = response;
+        throw error;
+      }
+      return response;
     };
     return config;
   };
@@ -213,11 +219,71 @@ const firestoreAdapter = async (config: any) => {
       const ref = await addDoc(collection(db, 'customers'), parsedData);
       return respond({ id: ref.id, ...parsedData });
     }
+    if (url.includes('/customers/update') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'customers', id), parsedData);
+      return respond({ id, ...parsedData });
+    }
+    if (url.includes('/customers/delete') && method === 'delete') {
+      const id = url.split('/').pop();
+      if (id) await deleteDoc(doc(db, 'customers', id));
+      return respond({ success: true });
+    }
 
     // Billing
+    if (url.includes('/billing/notifications') && method === 'get') {
+      const snap = await getDocs(collection(db, 'bills'));
+      const reminderBills = snap.docs
+        .map(d => ({ ...d.data(), id: d.id }))
+        .filter((b: any) => 
+          b.enableExpiryReminder === true && 
+          b.status !== 'CANCELLED' && 
+          b.status !== 'REFUNDED' &&
+          b.status !== 'HOLD'
+        );
+      return respond(reminderBills);
+    }
     if (url.includes('/billing/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'bills'));
       return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/billing/range') && method === 'get') {
+      const snap = await getDocs(collection(db, 'bills'));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/billing/search') && method === 'get') {
+      const snap = await getDocs(collection(db, 'bills'));
+      // Basic mock fallback
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/billing/hold') && method === 'get') {
+      const snap = await getDocs(query(collection(db, 'bills'), where('status', '==', 'HOLD')));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/billing/cancelled') && method === 'get') {
+      const snap = await getDocs(query(collection(db, 'bills'), where('status', '==', 'CANCELLED')));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    // Single bill GET
+    if (url.includes('/billing/') && !url.includes('/update') && !url.includes('/pay') && !url.includes('/cancel') && !url.includes('/refund') && !url.includes('/notifications') && !url.includes('/all') && !url.includes('/create') && !url.includes('/search') && !url.includes('/range') && method === 'get') {
+      const parts = url.split('?')[0].split('/');
+      const id = parts[parts.indexOf('billing') + 1];
+      if (id) {
+        const snap = await getDocs(query(collection(db, 'bills'), where('__name__', '==', id)));
+        if (!snap.empty) {
+          return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        }
+      }
+      return respond(null, 404);
+    }
+    if (url.includes('/billing/') && method === 'delete') {
+      const parts = url.split('?')[0].split('/');
+      const id = parts[parts.indexOf('billing') + 1];
+      if (id) {
+        await deleteDoc(doc(db, 'bills', id));
+        return respond({ success: true });
+      }
     }
     if (url.includes('/billing/create') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
@@ -270,27 +336,30 @@ const firestoreAdapter = async (config: any) => {
         for (const item of parsedData.items) {
           const itemType = (item.type || '').toLowerCase();
           if (itemType !== 'service') {
-            const productRef = doc(db, 'products', item.id || item.productId || item.barcode);
-            const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productRef.id)));
-            if (!productSnap.empty) {
-              const productData = productSnap.docs[0].data();
-              const previousStock = productData.stockQuantity || 0;
-              const resultingStock = previousStock - (item.quantity || item.qty);
-              
-              await updateDoc(productRef, { stockQuantity: resultingStock });
-              
-              await addDoc(collection(db, 'stock_transactions'), {
-                productId: productRef.id,
-                productName: item.name || productData.name,
-                transactionType: 'SALE',
-                quantity: item.quantity || item.qty,
-                previousStock,
-                resultingStock,
-                reason: `Sale on Bill #${ref.id}`,
-                referenceType: 'BILL',
-                referenceId: ref.id,
-                createdAt: new Date().toISOString()
-              });
+            const productId = item.id || item.productId || item.barcode;
+            if (productId) {
+              const productRef = doc(db, 'products', productId);
+              const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productRef.id)));
+              if (!productSnap.empty) {
+                const productData = productSnap.docs[0].data();
+                const previousStock = productData.stockQuantity || 0;
+                const resultingStock = previousStock - (item.quantity || item.qty);
+                
+                await updateDoc(productRef, { stockQuantity: resultingStock });
+                
+                await addDoc(collection(db, 'stock_transactions'), {
+                  productId: productRef.id,
+                  productName: item.name || productData.name,
+                  transactionType: 'SALE',
+                  quantity: item.quantity || item.qty,
+                  previousStock,
+                  resultingStock,
+                  reason: `Sale on Bill #${ref.id}`,
+                  referenceType: 'BILL',
+                  referenceId: ref.id,
+                  createdAt: new Date().toISOString()
+                });
+              }
             }
           }
         }
@@ -308,27 +377,30 @@ const firestoreAdapter = async (config: any) => {
         for (const item of parsedData.items) {
           const itemType = (item.type || '').toLowerCase();
           if (itemType !== 'service') {
-            const productRef = doc(db, 'products', item.id || item.productId || item.barcode);
-            const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productRef.id)));
-            if (!productSnap.empty) {
-              const productData = productSnap.docs[0].data();
-              const previousStock = productData.stockQuantity || 0;
-              const resultingStock = previousStock - (item.quantity || item.qty);
-              
-              await updateDoc(productRef, { stockQuantity: resultingStock });
-              
-              await addDoc(collection(db, 'stock_transactions'), {
-                productId: productRef.id,
-                productName: item.name || productData.name,
-                transactionType: 'SALE',
-                quantity: item.quantity || item.qty,
-                previousStock,
-                resultingStock,
-                reason: `Sale on Bill #${id} (Hold converted)`,
-                referenceType: 'BILL',
-                referenceId: id,
-                createdAt: new Date().toISOString()
-              });
+            const productId = item.id || item.productId || item.barcode;
+            if (productId) {
+              const productRef = doc(db, 'products', productId);
+              const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productRef.id)));
+              if (!productSnap.empty) {
+                const productData = productSnap.docs[0].data();
+                const previousStock = productData.stockQuantity || 0;
+                const resultingStock = previousStock - (item.quantity || item.qty);
+                
+                await updateDoc(productRef, { stockQuantity: resultingStock });
+                
+                await addDoc(collection(db, 'stock_transactions'), {
+                  productId: productRef.id,
+                  productName: item.name || productData.name,
+                  transactionType: 'SALE',
+                  quantity: item.quantity || item.qty,
+                  previousStock,
+                  resultingStock,
+                  reason: `Sale on Bill #${id} (Hold converted)`,
+                  referenceType: 'BILL',
+                  referenceId: id,
+                  createdAt: new Date().toISOString()
+                });
+              }
             }
           }
         }
@@ -349,8 +421,9 @@ const firestoreAdapter = async (config: any) => {
     }
     if (url.includes('/billing/') && (url.includes('/cancel') || url.includes('/refund')) && (method === 'put' || method === 'patch' || method === 'post')) {
       const parts = url.split('?')[0].split('/');
-      // Find the ID assuming structure /billing/:id/cancel or similar
-      const id = parts.find(p => p !== '' && p !== 'api' && p !== 'billing' && p !== 'cancel' && p !== 'refund');
+      // Extract ID: it's the segment right after 'billing' and before 'cancel'/'refund'
+      const billingIdx = parts.indexOf('billing');
+      const id = billingIdx >= 0 && billingIdx + 1 < parts.length ? parts[billingIdx + 1] : undefined;
       const action = url.includes('/cancel') ? 'CANCELLED' : 'REFUNDED';
       
       if (id) {
@@ -402,6 +475,31 @@ const firestoreAdapter = async (config: any) => {
           const commSnap = await getDocs(query(collection(db, 'staff_commissions'), where('billId', '==', id)));
           for (const commDoc of commSnap.docs) {
              await updateDoc(commDoc.ref, { status: action });
+          }
+
+          // Revert Customer Stats (totalSpent, totalPaid, visitCount)
+          const linkedCustomerId = billData.customerId;
+          if (linkedCustomerId) {
+            try {
+              const custDocSnap = await getDocs(query(collection(db, 'customers'), where('__name__', '==', linkedCustomerId)));
+              if (!custDocSnap.empty) {
+                const custData = custDocSnap.docs[0].data();
+                const billTotal = Number(billData.finalAmount || billData.totalAmount) || 0;
+                const billPaid = Number(billData.amountPaid) || (billData.status === 'PAID' ? billTotal : 0);
+                const prevSpent = Number(custData.totalSpent) || 0;
+                const prevPaid = Number(custData.totalPaid) || 0;
+                const prevVisits = Number(custData.visitCount) || 0;
+
+                await updateDoc(doc(db, 'customers', linkedCustomerId), {
+                  totalSpent: Math.max(0, prevSpent - billTotal),
+                  totalPaid: Math.max(0, prevPaid - billPaid),
+                  pendingBalance: Math.max(0, (prevSpent - billTotal) - (prevPaid - billPaid)),
+                  visitCount: Math.max(0, prevVisits - 1),
+                });
+              }
+            } catch (cErr) {
+              console.error("Failed to revert customer stats on refund/cancel:", cErr);
+            }
           }
         }
       }
@@ -541,6 +639,145 @@ const firestoreAdapter = async (config: any) => {
       const id = url.split('/').pop();
       if (id) await deleteDoc(doc(db, 'appointments', id));
       return respond({ success: true });
+    }
+
+    // Customers (Get)
+    if (url.includes('/customers/get/') && method === 'get') {
+      const id = url.split('/').pop();
+      if (!id) return respond(null);
+      const snap = await getDocs(query(collection(db, 'customers'), where('__name__', '==', id)));
+      if (snap.empty) return respond(null, 404);
+      return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
+    }
+
+    // Vendors
+    if (url.includes('/vendors/all') && method === 'get') {
+      const snap = await getDocs(collection(db, 'vendors'));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/vendors/get/') && method === 'get') {
+      const id = url.split('/').pop();
+      if (!id) return respond(null);
+      const snap = await getDocs(query(collection(db, 'vendors'), where('__name__', '==', id)));
+      if (snap.empty) return respond(null, 404);
+      return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
+    }
+    if (url.includes('/vendors/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'vendors'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/vendors/update') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'vendors', id), parsedData);
+      return respond({ id, ...parsedData });
+    }
+    if (url.includes('/vendors/delete') && method === 'delete') {
+      const id = url.split('/').pop();
+      if (id) await deleteDoc(doc(db, 'vendors', id));
+      return respond({ success: true });
+    }
+
+    // Vendor Transactions
+    if (url.includes('/vendors/transactions/vendor/') && method === 'get') {
+      const vendorId = url.split('/').pop();
+      const snap = await getDocs(query(collection(db, 'vendor_transactions'), where('vendorId', '==', vendorId)));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/vendors/transactions/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'vendor_transactions'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/vendors/transactions/update') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'vendor_transactions', id), parsedData);
+      return respond({ id, ...parsedData });
+    }
+    if (url.includes('/vendors/transactions/delete') && method === 'delete') {
+      const id = url.split('/').pop();
+      if (id) await deleteDoc(doc(db, 'vendor_transactions', id));
+      return respond({ success: true });
+    }
+    if (url.includes('/vendors/transactions/') && url.includes('/pay') && (method === 'put' || method === 'patch')) {
+      const parts = url.split('?')[0].split('/');
+      const id = parts[parts.indexOf('transactions') + 1];
+      // simplified mock response
+      if (id) await updateDoc(doc(db, 'vendor_transactions', id), { status: 'PAID' });
+      return respond({ id, status: 'PAID' });
+    }
+    if (url.includes('/vendors/transactions/range') && method === 'get') {
+      const snap = await getDocs(collection(db, 'vendor_transactions'));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+
+    // Daybook
+    if (url.includes('/billing/daybook/tally') && method === 'get') {
+       const urlObj = new URL('http://localhost' + url);
+       const date = urlObj.searchParams.get('date');
+       const snap = await getDocs(query(collection(db, 'cash_tally'), where('date', '==', date)));
+       if (snap.empty) return respond(null, 404);
+       return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
+    }
+    if (url.includes('/billing/daybook/tally') && method === 'post') {
+       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+       const snap = await getDocs(query(collection(db, 'cash_tally'), where('date', '==', parsedData.date)));
+       if (!snap.empty) {
+         await updateDoc(doc(db, 'cash_tally', snap.docs[0].id), parsedData);
+         return respond({ id: snap.docs[0].id, ...parsedData });
+       }
+       const ref = await addDoc(collection(db, 'cash_tally'), parsedData);
+       return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/billing/daybook/summary') && method === 'get') {
+      const snap = await getDocs(collection(db, 'daybook'));
+      const entries = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const summary = {
+        salesSummary: { total: 0, cash: 0, upi: 0, card: 0 },
+        entries
+      };
+      return respond(summary);
+    }
+    if (url.includes('/billing/daybook/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'daybook'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/billing/daybook/update') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'daybook', id), parsedData);
+      return respond({ id, ...parsedData });
+    }
+    if (url.includes('/billing/daybook/delete') && method === 'delete') {
+      const id = url.split('/').pop();
+      if (id) await deleteDoc(doc(db, 'daybook', id));
+      return respond({ success: true });
+    }
+    if (url.includes('/billing/daybook/range') && method === 'get') {
+       const snap = await getDocs(collection(db, 'daybook'));
+       const entries = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+       return respond({ summary: { totalIncome: 0, totalExpense: 0 }, dailyBreakdown: [], chartData: [], entries });
+    }
+
+    // Estimations
+    if (url.includes('/estimations/all') && method === 'get') {
+      const snap = await getDocs(collection(db, 'estimations'));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/estimations/create') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'estimations'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/estimations/') && method === 'put') {
+      const parts = url.split('?')[0].split('/');
+      const id = parts[parts.indexOf('estimations') + 1];
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'estimations', id), parsedData);
+      return respond({ id, ...parsedData });
     }
 
     // Customer Packages
