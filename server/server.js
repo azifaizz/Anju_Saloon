@@ -50,7 +50,8 @@ app.post("/api/process-billing", async (req, res) => {
         let truePrice = item.price; // fallback
         
         try {
-          const collectionName = item.type === 'service' ? 'services' : 'products';
+          const itemType = (item.type || '').toLowerCase();
+          const collectionName = itemType === 'service' ? 'services' : 'products';
           const docSnap = await db.collection(collectionName).doc(item.id).get();
           
           if (docSnap.exists) {
@@ -97,6 +98,45 @@ app.post("/api/process-billing", async (req, res) => {
     if (db) {
        const collectionName = isEstimation ? "estimations" : "bills";
        const result = await db.collection(collectionName).add(billDoc);
+
+       // Auto-deduct stock for products if not an estimation
+       if (!isEstimation) {
+         try {
+           for (const item of validatedItems) {
+             const itemType = (item.type || '').toLowerCase();
+             // Only deduct for products, skip services
+             if (itemType !== 'service') {
+                const productRef = db.collection('products').doc(item.id);
+                const productSnap = await productRef.get();
+                if (productSnap.exists) {
+                   const productData = productSnap.data();
+                   const previousStock = productData.stockQuantity || 0;
+                   const resultingStock = previousStock - item.quantity;
+                   
+                   // Update product stock
+                   await productRef.update({ stockQuantity: resultingStock });
+                   
+                   // Log stock transaction
+                   await db.collection('stock_transactions').add({
+                      productId: item.id,
+                      productName: item.name || productData.name,
+                      transactionType: 'SALE',
+                      quantity: item.quantity,
+                      previousStock: previousStock,
+                      resultingStock: resultingStock,
+                      reason: `Sale on Bill #${result.id}`,
+                      referenceType: 'BILL',
+                      referenceId: result.id,
+                      createdAt: new Date().toISOString()
+                   });
+                }
+             }
+           }
+         } catch (stockErr) {
+           console.error("Failed to update stock during billing:", stockErr);
+         }
+       }
+
        res.json({ success: true, billId: result.id, bill: billDoc });
        
        // Asynchronously send SMS via pseudo-trigger pattern

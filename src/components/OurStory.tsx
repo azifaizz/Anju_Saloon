@@ -33,7 +33,7 @@ const OurStory = () => {
             <h2 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-gray-900">
               Our <span className="text-gradient-salon">Story</span>
             </h2>
-            <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+            <p className="text-base text-gray-600 max-w-3xl mx-auto leading-relaxed">
               A journey of beauty, expert care, and an unwavering commitment to
               enhancing your natural radiance.
             </p>

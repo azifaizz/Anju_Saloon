@@ -37,7 +37,7 @@ const ProtectedRoute = ({ requiredRole }: ProtectedRouteProps) => {
                 sessionStorage.clear();
                 window.location.href = '/';
               }}
-              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-200 rounded-lg text-sm transition-colors mt-2"
+              className="px-3 py-1.5 text-sm bg-red-500/20 hover:bg-red-500/30 text-red-200 rounded-lg text-sm transition-colors mt-2"
             >
               Force Logout & Reset
             </button>

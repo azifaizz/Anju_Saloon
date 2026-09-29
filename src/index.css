@@ -1,5 +1,5 @@
 /* src/index.css */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Playfair+Display:wght@700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -47,6 +47,7 @@
   body {
     background-color: hsl(var(--background));
     background-image: linear-gradient(to top right, #fff1f2, #fdfbfb, #fef6e9);
+    @apply font-sans text-sm antialiased text-slate-800;
   }
 }
 

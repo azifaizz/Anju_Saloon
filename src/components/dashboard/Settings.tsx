@@ -20,6 +20,11 @@ const Settings = () => {
   // --- These values remain editable by the user ---
   const [billMessage, setBillMessage] = useLocalStorage('billMessage', 'Thank You For Your Purchasing');
   const [defaultGst, setDefaultGst] = useLocalStorage('defaultGst', '');
+  
+  // Loyalty Settings
+  const [loyaltyEnabled, setLoyaltyEnabled] = useLocalStorage('loyaltyEnabled', false);
+  const [loyaltySpendRatio, setLoyaltySpendRatio] = useLocalStorage('loyaltySpendRatio', 100); // Spend amount for 1 point
+  const [loyaltyRedeemValue, setLoyaltyRedeemValue] = useLocalStorage('loyaltyRedeemValue', 1); // 1 point = X Rs
 
   const handleSave = () => {
     // Note: This only saves the editable fields, as the others cannot be changed.
@@ -78,6 +83,63 @@ const Settings = () => {
               onChange={e => setDefaultGst(e.target.value)}
               className="form-input mt-1"
             />
+          </div>
+
+          <div className="pt-6 border-t">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Loyalty Program</h2>
+            
+            <div className="flex items-center gap-3 mb-4">
+              <input 
+                type="checkbox" 
+                id="loyaltyEnabled"
+                checked={loyaltyEnabled}
+                onChange={(e) => setLoyaltyEnabled(e.target.checked)}
+                className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="loyaltyEnabled" className="font-medium text-gray-700 cursor-pointer">
+                Enable Loyalty Program
+              </label>
+            </div>
+            
+            {loyaltyEnabled && (
+              <div className="space-y-4 ml-8 p-4 bg-gray-50 rounded-lg border">
+                <div>
+                  <label htmlFor="spendRatio" className="font-medium text-gray-700 block text-sm mb-1">
+                    Points Earning Rule
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500">Earn 1 point for every ₹</span>
+                    <input
+                      id="spendRatio"
+                      type="number"
+                      min="1"
+                      value={loyaltySpendRatio}
+                      onChange={e => setLoyaltySpendRatio(Number(e.target.value))}
+                      className="form-input w-24 py-1"
+                    />
+                    <span className="text-gray-500">spent</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <label htmlFor="redeemValue" className="font-medium text-gray-700 block text-sm mb-1">
+                    Points Redemption Value
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500">1 point = ₹</span>
+                    <input
+                      id="redeemValue"
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={loyaltyRedeemValue}
+                      onChange={e => setLoyaltyRedeemValue(Number(e.target.value))}
+                      className="form-input w-24 py-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="pt-2">

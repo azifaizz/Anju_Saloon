@@ -162,9 +162,9 @@ export const WholesaleBillLayout: React.FC<{ data: PrintableBillData }> = ({ dat
                     {/* COMPANY BOX */}
                     <div className="company-details-box">
                         <div className="company-top-labels">
-                            <span className="label-left">{isEstimate ? "ESTIMATION" : "TAX INVOICE"}</span>
+                            <span className="label-left">{isEstimate ? "ESTIMATION" : "SALON RECEIPT"}</span>
                             <span className="label-center"></span>
-                            <span className="label-right">ORIGINAL</span>
+                            <span className="label-right">CUSTOMER COPY</span>
                         </div>
                         <div className="company-middle-row">
                             <div className="spacer"></div>
@@ -216,8 +216,7 @@ export const WholesaleBillLayout: React.FC<{ data: PrintableBillData }> = ({ dat
                             <thead>
                                 <tr>
                                     <th className="sno-col">S.No</th>
-                                    <th className="id-col">Item ID</th>
-                                    <th className="desc-col">Particulars</th>
+                                    <th className="desc-col">Service / Product</th>
                                     <th className="qty-col">Qty</th>
                                     <th className="rate-col">Rate</th>
                                     <th className="disc-col">Disc</th>
@@ -228,7 +227,6 @@ export const WholesaleBillLayout: React.FC<{ data: PrintableBillData }> = ({ dat
                                 {page.items.map((item, idx) => (
                                     <tr key={idx} className="product-row">
                                         <td className="text-center">{item ? (page.startIndex + idx + 1) : ""}</td>
-                                        <td className="text-center">{item ? (item.productId || item.id || item.barcode) : ""}</td>
                                         <td className="text-left">
                                             {item ? (
                                                 <>
@@ -249,7 +247,7 @@ export const WholesaleBillLayout: React.FC<{ data: PrintableBillData }> = ({ dat
                                 ))}
                                 {page.showFooter && (
                                     <tr className="total-row">
-                                        <td colSpan={3} className="text-right" style={{ paddingRight: '5mm' }}>TOTAL</td>
+                                        <td colSpan={2} className="text-right" style={{ paddingRight: '5mm' }}>TOTAL</td>
                                         <td className="text-center">{totalQty}</td>
                                         <td></td>
                                         <td className="text-right">{items.reduce((sum, i) => sum + (i.discount || 0), 0).toFixed(2)}</td>
@@ -351,10 +349,12 @@ export const WholesaleBillLayout: React.FC<{ data: PrintableBillData }> = ({ dat
                                                     </tr>
                                                 </>
                                             )}
-                                            <tr>
-                                                <td>Parcel:</td>
-                                                <td className="text-right">₹0.00</td>
-                                            </tr>
+                                            {((data as any).loyaltyDiscount || 0) > 0 && (
+                                                <tr>
+                                                    <td>Loyalty Discount:</td>
+                                                    <td className="text-right text-red-600">-₹{((data as any).loyaltyDiscount || 0).toFixed(2)}</td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
@@ -385,7 +385,7 @@ export const WholesaleBillLayout: React.FC<{ data: PrintableBillData }> = ({ dat
 
                     {/* FOOTER YELLOW BAND */}
                     <div className="footer-yellow-band">
-                        <div className="jurisdiction-text">Subject to Kanchipuram Jurisdiction</div>
+                        <div className="jurisdiction-text">Thank you for visiting!</div>
                         <div className="page-indicator">Page {pageIdx + 1} of {totalPages}</div>
                     </div>
                 </div>

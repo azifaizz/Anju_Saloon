@@ -95,7 +95,7 @@ const StaffManagement = () => {
 const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
     <button
         onClick={onClick}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${active
+        className={`flex items-center space-x-2 px-3 py-1.5 text-sm rounded-lg text-sm font-semibold transition-all ${active
             ? 'bg-blue-600 text-white shadow-md transform scale-105'
             : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
             }`}
@@ -207,7 +207,7 @@ const MarkAttendanceDialog = ({ staff, date, currentStatus, onClose, onSuccess }
                                     <Clock size={48} />
                                 </div>
                                 <div className="text-xs text-blue-600 font-black uppercase tracking-widest mb-1">Total Duration</div>
-                                <div className="text-3xl font-black text-blue-800 tabular-nums">{String(permHrs)} <span className="text-lg opacity-60">hrs</span></div>
+                                <div className="text-3xl font-black text-blue-800 tabular-nums">{String(permHrs)} <span className="text-base opacity-60">hrs</span></div>
                             </div>
                         </div>
                     )}
@@ -515,7 +515,7 @@ const DirectoryView = ({ staff, loading, searchTerm, setSearchTerm, onRefresh, o
             <div className="w-1/3 bg-white rounded-xl shadow-sm flex flex-col border border-gray-200 overflow-hidden">
                 <div className="p-4 border-b bg-gray-50">
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
                             <Users className="text-blue-600" size={20} /> Staff Directory
                         </h2>
                         <button
@@ -747,7 +747,7 @@ const DirectoryView = ({ staff, loading, searchTerm, setSearchTerm, onRefresh, o
                             </div>
 
                             <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col min-h-[500px]">
-                                <div className="border-b bg-gray-50 px-4 py-3 border-gray-200 flex justify-between items-center gap-4">
+                                <div className="border-b bg-gray-50 px-3 py-1.5 text-sm border-gray-200 flex justify-between items-center gap-4">
                                     <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 whitespace-nowrap">
                                         <CreditCard size={16} className="text-blue-600" /> Commission Ledger
                                     </h3>
@@ -847,7 +847,7 @@ const DirectoryView = ({ staff, loading, searchTerm, setSearchTerm, onRefresh, o
                         <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                             <Users size={40} className="text-gray-300" />
                         </div>
-                        <h3 className="text-lg font-medium text-gray-600">No Staff Selected</h3>
+                        <h3 className="text-base font-medium text-gray-600">No Staff Selected</h3>
                         <p className="text-gray-400 max-w-xs text-center mt-2">Select a staff member from the directory to view details, manage attendance, and see history.</p>
                     </div>
                 )}
@@ -1033,9 +1033,9 @@ const StaffCalendarModal = ({ staff, onClose }: { staff: Staff, onClose: () => v
                     </div>
                     <div className="flex items-center gap-6">
                         {/* Month Navigation */}
-                        <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-4 bg-white px-3 py-1.5 text-sm rounded-xl shadow-sm border border-gray-200">
                             <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><ChevronLeft size={20} /></button>
-                            <span className="text-lg font-bold text-gray-800 min-w-[140px] text-center">{format(currentDate, 'MMMM yyyy')}</span>
+                            <span className="text-base font-bold text-gray-800 min-w-[140px] text-center">{format(currentDate, 'MMMM yyyy')}</span>
                             <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><ChevronRight size={20} /></button>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-red-100 hover:text-red-600 rounded-full text-gray-400 transition-colors"><XCircle size={32} /></button>
@@ -1128,7 +1128,7 @@ const StaffCalendarModal = ({ staff, onClose }: { staff: Staff, onClose: () => v
 
                         <div className="flex justify-between items-center pb-2">
                             <div>
-                                <h3 className="font-black text-gray-800 text-lg uppercase tracking-tight">{format(new Date(selectedDate), 'MMM dd')}</h3>
+                                <h3 className="font-black text-gray-800 text-base uppercase tracking-tight">{format(new Date(selectedDate), 'MMM dd')}</h3>
                                 <p className="text-xs text-gray-400 font-bold">{format(new Date(selectedDate), 'yyyy')}</p>
                             </div>
                             <button onClick={() => setSelectedDate(null)} className="p-2 rounded-full hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors group">
@@ -1420,7 +1420,7 @@ const StaffFormModal = ({ staff, onClose, onSuccess }: any) => {
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                        <button type="button" onClick={onClose} className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors">Cancel</button>
+                        <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-sm text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors">Cancel</button>
                         <button type="submit" disabled={isSaving} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md transition-all transform active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2">
                             {isSaving && <Loader2 size={16} className="animate-spin" />}
                             {isSaving ? "Saving..." : "Save Staff"}
@@ -1497,7 +1497,7 @@ const TimePicker = ({ value, onChange }: { value: string, onChange: (v: string) 
                     <div
                         key={h}
                         onClick={() => handleHourChange(h)}
-                        className={`h-8 flex items-center justify-center text-lg font-bold snap-center cursor-pointer transition-all duration-300 ${hours === h ? 'text-blue-600 scale-125 z-20' : 'text-gray-400 opacity-40 hover:opacity-100 hover:text-gray-600'}`}
+                        className={`h-8 flex items-center justify-center text-base font-bold snap-center cursor-pointer transition-all duration-300 ${hours === h ? 'text-blue-600 scale-125 z-20' : 'text-gray-400 opacity-40 hover:opacity-100 hover:text-gray-600'}`}
                     >
                         {h}
                     </div>
@@ -1515,7 +1515,7 @@ const TimePicker = ({ value, onChange }: { value: string, onChange: (v: string) 
                     <div
                         key={m}
                         onClick={() => handleMinuteChange(m)}
-                        className={`h-8 flex items-center justify-center text-lg font-bold snap-center cursor-pointer transition-all duration-300 ${minutes === m ? 'text-blue-600 scale-125 z-20' : 'text-gray-400 opacity-40 hover:opacity-100 hover:text-gray-600'}`}
+                        className={`h-8 flex items-center justify-center text-base font-bold snap-center cursor-pointer transition-all duration-300 ${minutes === m ? 'text-blue-600 scale-125 z-20' : 'text-gray-400 opacity-40 hover:opacity-100 hover:text-gray-600'}`}
                     >
                         {m}
                     </div>

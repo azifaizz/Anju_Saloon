@@ -16,7 +16,7 @@ import CashierLayout from '@/pages/dashboard/CashierLayout';
 import DashboardOverview from '@/components/dashboard/DashboardOverview';
 import Billing from '@/components/dashboard/Billing';
 import Products from '@/components/dashboard/Products';
-import SupplierCreditHistory from '@/components/dashboard/SupplierCreditHistory';
+
 import DailyActions from '@/components/dashboard/DailyActions';
 import Suppliers from '@/components/dashboard/Suppliers';
 import Customers from '@/components/dashboard/Customers';
@@ -30,6 +30,8 @@ import ViewProduct from '@/components/dashboard/ViewProduct';
 import CashierDashboard from '@/components/dashboard/CashierDashboard';
 import Services from '@/components/dashboard/Services';
 import Appointments from '@/components/dashboard/Appointments';
+import StockMovements from '@/components/dashboard/StockMovements';
+import Packages from '@/components/dashboard/Packages';
 
 import { AuthProvider } from "@/context/AuthContext";
 import { GlobalDataProvider } from "@/context/GlobalDataContext";
@@ -92,13 +94,15 @@ const App = () => {
                   <Route path="customers" element={<Customers />} />
                   <Route path="customers/:id" element={<CustomerDetails />} />
                   <Route path="view-product" element={<ViewProduct />} />
-                                    <Route path="staff" element={<StaffManagement />} />
+                  <Route path="staff" element={<StaffManagement />} />
                   <Route path="services" element={<Services />} />
+                  <Route path="packages" element={<Packages />} />
                   <Route path="appointments" element={<Appointments />} />
                   <Route path="printed-bills" element={<PrintedBills />} />
-                  <Route path="supplier-credits" element={<SupplierCreditHistory />} />
+
 
                   <Route path="daily-actions" element={<DailyActions />} />
+                  <Route path="stock-movements" element={<StockMovements />} />
                   <Route path="reports" element={<Reports />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
@@ -114,7 +118,6 @@ const App = () => {
                   <Route path="appointments" element={<Appointments />} />
                   <Route path="customers" element={<Customers />} />
                   <Route path="customers/:id" element={<CustomerDetails />} />
-                                    <Route path="staff" element={<StaffManagement />} />
                   <Route path="daily-actions" element={<DailyActions />} />
                   <Route path="printed-bills" element={<PrintedBills />} />
                   <Route path="sales-report" element={<CashierReports />} />

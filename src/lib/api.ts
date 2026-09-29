@@ -32,30 +32,89 @@ const firestoreAdapter = async (config: any) => {
     return config;
   };
 
+  // Helper to sanitize payload before saving to Firestore
+  const sanitizeForFirestore = (obj: any): any => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj !== 'object') return obj;
+    if (obj instanceof Date) return obj.toISOString();
+    if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+    if (typeof File !== 'undefined' && obj instanceof File) return undefined;
+    if (typeof Blob !== 'undefined' && obj instanceof Blob) return undefined;
+
+    const clean: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val === undefined) continue;
+      if (typeof File !== 'undefined' && val instanceof File) continue;
+      if (typeof Blob !== 'undefined' && val instanceof Blob) continue;
+      clean[key] = sanitizeForFirestore(val);
+    }
+    return clean;
+  };
+
   try {
     if (url.includes('/products/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'products'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/products/') && url.includes('/image') && method === 'post') {
+      const id = url.split('/products/')[1].split('/image')[0].replace(/\//g, '');
+      let imageUrl = '';
+      if (config.data instanceof FormData) {
+        const file = config.data.get('file') as any;
+        if (file && typeof file === 'object' && 'arrayBuffer' in file) {
+          const buffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = btoa(binary);
+          imageUrl = `data:${file.type || 'image/jpeg'};base64,${base64}`;
+        }
+      }
+      if (id && imageUrl) {
+        await updateDoc(doc(db, 'products', id), { imageUrl, updatedAt: new Date().toISOString() });
+      }
+      return respond({ success: true, imageUrl });
     }
     if (url.includes('/products/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      const ref = await addDoc(collection(db, 'products'), parsedData);
-      return respond({ id: ref.id, ...parsedData });
+      const cleanData = sanitizeForFirestore(parsedData);
+      const ref = await addDoc(collection(db, 'products'), cleanData);
+      return respond({ id: ref.id, ...cleanData });
     }
     if (url.includes('/products/update') && method === 'patch') {
       const id = url.split('/').pop();
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      if (id) await updateDoc(doc(db, 'products', id), parsedData);
-      return respond({ id, ...parsedData });
+      const cleanData = sanitizeForFirestore(parsedData);
+      if (id) await updateDoc(doc(db, 'products', id), cleanData);
+      return respond({ id, ...cleanData });
     }
     if (url.includes('/products/delete') && method === 'delete') {
       const id = url.split('/').pop();
       if (id) await deleteDoc(doc(db, 'products', id));
       return respond({ success: true });
     }
-    if (url.includes('/products/categories') && method === 'get') {
+    if (url === '/products/categories' && method === 'get') {
       const snap = await getDocs(collection(db, 'categories'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/products/categories/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'categories'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/products/categories/delete') && method === 'delete') {
+      const id = url.split('/').pop();
+      if (id) await deleteDoc(doc(db, 'categories', id));
+      return respond({ success: true });
+    }
+    if (url.includes('/products/categories/') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'categories', id), parsedData);
+      return respond({ id, ...parsedData });
     }
     if (url.includes('/products/barcode/') && method === 'get') {
       const barcode = url.split('/products/barcode/')[1];
@@ -66,10 +125,21 @@ const firestoreAdapter = async (config: any) => {
       return respond({ id: snap.docs[0].id, ...snap.docs[0].data() });
     }
     
+    // Stock Transactions
+    if (url.includes('/stock-transactions/all') && method === 'get') {
+      const snap = await getDocs(collection(db, 'stock_transactions'));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/stock-transactions/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'stock_transactions'), { ...parsedData, createdAt: new Date().toISOString() });
+      return respond({ id: ref.id, ...parsedData });
+    }
+    
     // Salon Services
     if (url.includes('/salon-services/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'services'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     }
     if (url.includes('/salon-services/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
@@ -79,6 +149,7 @@ const firestoreAdapter = async (config: any) => {
     if (url.includes('/salon-services/update') && method === 'patch') {
       const id = url.split('/').pop();
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      console.log('UPDATING SALON SERVICE', id, parsedData);
       if (id) await updateDoc(doc(db, 'services', id), parsedData);
       return respond({ id, ...parsedData });
     }
@@ -89,16 +160,56 @@ const firestoreAdapter = async (config: any) => {
     }
     if (url.includes('/salon-services/categories') && method === 'get') {
       const snap = await getDocs(collection(db, 'salon_service_categories'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+
+    // Packages
+    if (url.includes('/packages/all') && method === 'get') {
+      const snap = await getDocs(collection(db, 'packages'));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/packages/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'packages'), { ...parsedData, createdAt: new Date().toISOString() });
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/packages/update') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'packages', id), { ...parsedData, updatedAt: new Date().toISOString() });
+      return respond({ id, ...parsedData });
+    }
+    if (url.includes('/packages/delete') && method === 'delete') {
+      const id = url.split('/').pop();
+      if (id) await deleteDoc(doc(db, 'packages', id));
+      return respond({ success: true });
     }
 
     // Customers
     if (url.includes('/customers/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'customers'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     }
     if (url.includes('/customers/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const cleanPhone = (parsedData.phone || '').toString().replace(/\D/g, '');
+
+      // Check if customer already exists by phone (matching last 10 digits) or exact name
+      if (cleanPhone.length >= 7) {
+        const allCustSnap = await getDocs(collection(db, 'customers'));
+        const existingDoc = allCustSnap.docs.find(d => {
+          const cPhone = (d.data().phone || '').toString().replace(/\D/g, '');
+          return cPhone === cleanPhone || (cPhone.length >= 10 && cleanPhone.length >= 10 && cPhone.slice(-10) === cleanPhone.slice(-10));
+        });
+        if (existingDoc) {
+          await updateDoc(doc(db, 'customers', existingDoc.id), {
+            ...parsedData,
+            updatedAt: new Date().toISOString()
+          });
+          return respond({ id: existingDoc.id, ...existingDoc.data(), ...parsedData });
+        }
+      }
+
       const ref = await addDoc(collection(db, 'customers'), parsedData);
       return respond({ id: ref.id, ...parsedData });
     }
@@ -106,23 +217,271 @@ const firestoreAdapter = async (config: any) => {
     // Billing
     if (url.includes('/billing/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'bills'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     }
     if (url.includes('/billing/create') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+
+      // Auto-link customerId if missing but phone matches an existing customer
+      let linkedCustomerId = parsedData.customerId;
+      const bPhoneClean = (parsedData.customerPhone || '').toString().replace(/\D/g, '');
+      if (!linkedCustomerId && bPhoneClean.length >= 7) {
+        const custSnap = await getDocs(collection(db, 'customers'));
+        const match = custSnap.docs.find(d => {
+          const cp = (d.data().phone || '').toString().replace(/\D/g, '');
+          return cp === bPhoneClean || (cp.length >= 10 && bPhoneClean.length >= 10 && cp.slice(-10) === bPhoneClean.slice(-10));
+        });
+        if (match) {
+          linkedCustomerId = match.id;
+          parsedData.customerId = match.id;
+        }
+      }
+
       const ref = await addDoc(collection(db, 'bills'), parsedData);
+
+      // Update customer stats (visit count, total spent, last visit) if linked
+      if (linkedCustomerId) {
+        try {
+          const custRef = doc(db, 'customers', linkedCustomerId);
+          const custDocSnap = await getDocs(query(collection(db, 'customers'), where('__name__', '==', linkedCustomerId)));
+          if (!custDocSnap.empty) {
+            const custData = custDocSnap.docs[0].data();
+            const prevSpent = Number(custData.totalSpent) || 0;
+            const prevPaid = Number(custData.totalPaid) || 0;
+            const prevVisits = Number(custData.visitCount) || 0;
+            const billTotal = Number(parsedData.finalAmount || parsedData.totalAmount) || 0;
+            const billPaid = Number(parsedData.amountPaid) || (parsedData.status === 'PAID' ? billTotal : 0);
+
+            await updateDoc(custRef, {
+              totalSpent: prevSpent + billTotal,
+              totalPaid: prevPaid + billPaid,
+              pendingBalance: Math.max(0, (prevSpent + billTotal) - (prevPaid + billPaid)),
+              visitCount: prevVisits + 1,
+              lastVisit: new Date().toISOString()
+            });
+          }
+        } catch (cErr) {
+          console.error("Failed to update customer stats in /billing/create:", cErr);
+        }
+      }
+      
+      // Auto-deduct stock for products
+      if (parsedData.status === 'PAID' && parsedData.items) {
+        for (const item of parsedData.items) {
+          const itemType = (item.type || '').toLowerCase();
+          if (itemType !== 'service') {
+            const productRef = doc(db, 'products', item.id || item.productId || item.barcode);
+            const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productRef.id)));
+            if (!productSnap.empty) {
+              const productData = productSnap.docs[0].data();
+              const previousStock = productData.stockQuantity || 0;
+              const resultingStock = previousStock - (item.quantity || item.qty);
+              
+              await updateDoc(productRef, { stockQuantity: resultingStock });
+              
+              await addDoc(collection(db, 'stock_transactions'), {
+                productId: productRef.id,
+                productName: item.name || productData.name,
+                transactionType: 'SALE',
+                quantity: item.quantity || item.qty,
+                previousStock,
+                resultingStock,
+                reason: `Sale on Bill #${ref.id}`,
+                referenceType: 'BILL',
+                referenceId: ref.id,
+                createdAt: new Date().toISOString()
+              });
+            }
+          }
+        }
+      }
+
       return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/billing/') && url.includes('/pay') && method === 'patch') {
+      const id = url.split('/').slice(-2, -1)[0];
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      await updateDoc(doc(db, 'bills', id), { ...parsedData, status: 'PAID' });
+      
+      // Auto-deduct stock for products
+      if (parsedData.items) {
+        for (const item of parsedData.items) {
+          const itemType = (item.type || '').toLowerCase();
+          if (itemType !== 'service') {
+            const productRef = doc(db, 'products', item.id || item.productId || item.barcode);
+            const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productRef.id)));
+            if (!productSnap.empty) {
+              const productData = productSnap.docs[0].data();
+              const previousStock = productData.stockQuantity || 0;
+              const resultingStock = previousStock - (item.quantity || item.qty);
+              
+              await updateDoc(productRef, { stockQuantity: resultingStock });
+              
+              await addDoc(collection(db, 'stock_transactions'), {
+                productId: productRef.id,
+                productName: item.name || productData.name,
+                transactionType: 'SALE',
+                quantity: item.quantity || item.qty,
+                previousStock,
+                resultingStock,
+                reason: `Sale on Bill #${id} (Hold converted)`,
+                referenceType: 'BILL',
+                referenceId: id,
+                createdAt: new Date().toISOString()
+              });
+            }
+          }
+        }
+      }
+
+      return respond({ id, ...parsedData, status: 'PAID' });
+    }
+    if (url.includes('/billing/hold') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'bills'), { ...parsedData, status: 'HOLD' });
+      return respond({ id: ref.id, ...parsedData, status: 'HOLD' });
+    }
+    if (url.includes('/billing/update/') && method === 'patch') {
+      const id = url.split('/').pop();
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      if (id) await updateDoc(doc(db, 'bills', id), parsedData);
+      return respond({ id, ...parsedData });
+    }
+    if (url.includes('/billing/') && (url.includes('/cancel') || url.includes('/refund')) && (method === 'put' || method === 'patch' || method === 'post')) {
+      const parts = url.split('?')[0].split('/');
+      // Find the ID assuming structure /billing/:id/cancel or similar
+      const id = parts.find(p => p !== '' && p !== 'api' && p !== 'billing' && p !== 'cancel' && p !== 'refund');
+      const action = url.includes('/cancel') ? 'CANCELLED' : 'REFUNDED';
+      
+      if (id) {
+        const billRef = doc(db, 'bills', id);
+        const billSnap = await getDocs(query(collection(db, 'bills'), where('__name__', '==', id)));
+        if (!billSnap.empty) {
+          const billData = billSnap.docs[0].data();
+          if (billData.status === 'CANCELLED' || billData.status === 'REFUNDED') {
+             return respond({ error: "Bill is already cancelled or refunded" }, 400);
+          }
+          
+          await updateDoc(billRef, { status: action, updatedAt: new Date().toISOString() });
+          
+          // Revert stock for products
+          if (billData.items) {
+            for (const item of billData.items) {
+              const itemType = (item.type || '').toLowerCase();
+              if (itemType !== 'service') {
+                const productId = item.id || item.productId || item.barcode;
+                if (productId) {
+                  const productRef = doc(db, 'products', productId);
+                  const productSnap = await getDocs(query(collection(db, 'products'), where('__name__', '==', productId)));
+                  if (!productSnap.empty) {
+                    const productData = productSnap.docs[0].data();
+                    const previousStock = productData.stockQuantity || 0;
+                    const resultingStock = previousStock + (item.quantity || item.qty || 1);
+                    
+                    await updateDoc(productRef, { stockQuantity: resultingStock });
+                    
+                    await addDoc(collection(db, 'stock_transactions'), {
+                      productId: productRef.id,
+                      productName: item.name || productData.name || item.productName,
+                      transactionType: action === 'CANCELLED' ? 'CORRECTION' : 'ADJUSTMENT',
+                      quantity: item.quantity || item.qty || 1,
+                      previousStock,
+                      resultingStock,
+                      reason: `${action === 'CANCELLED' ? 'Cancellation' : 'Refund'} of Bill #${id}`,
+                      referenceType: 'BILL',
+                      referenceId: id,
+                      createdAt: new Date().toISOString()
+                    });
+                  }
+                }
+              }
+            }
+          }
+          
+          // Revert Staff Commissions
+          const commSnap = await getDocs(query(collection(db, 'staff_commissions'), where('billId', '==', id)));
+          for (const commDoc of commSnap.docs) {
+             await updateDoc(commDoc.ref, { status: action });
+          }
+        }
+      }
+      return respond({ id, status: action });
     }
 
     // Staff
     if (url.includes('/staff/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'staff'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     }
     if (url.includes('/staff/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
       const ref = await addDoc(collection(db, 'staff'), parsedData);
       return respond({ id: ref.id, ...parsedData });
+    }
+    
+    // Attendance
+    if (url.includes('/staff/attendance/staff/') && method === 'get') {
+      const parts = url.split('/');
+      const yearMonth = parts.pop()!;
+      const staffId = parts.pop()!;
+      const snap = await getDocs(collection(db, 'attendance'));
+      let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      results = results.filter((a: any) => a.staffId === staffId && a.date && a.date.startsWith(yearMonth));
+      return respond(results);
+    }
+
+    // Salary Slip Computation
+    if (url.includes('/staff/salary/') && method === 'get') {
+      const parts = url.split('/');
+      const yearMonth = parts.pop()!;
+      const staffId = parts.pop()!;
+      
+      const staffSnap = await getDocs(query(collection(db, 'staff'), where('__name__', '==', staffId)));
+      if (staffSnap.empty) return respond({ error: 'Staff not found' }, 404);
+      const staffData = staffSnap.docs[0].data();
+      
+      const attSnap = await getDocs(collection(db, 'attendance'));
+      let attendances = attSnap.docs.map(d => d.data()).filter((a: any) => a.staffId === staffId && a.date && a.date.startsWith(yearMonth));
+      
+      let presentDays = 0, absentDays = 0, halfDays = 0, sickLeaves = 0, permissionHoursTaken = 0;
+      
+      attendances.forEach((a: any) => {
+         const status = a.status || a.type;
+         if (status === 'PRESENT' || status === 'FULL_DAY') presentDays++;
+         else if (status === 'ABSENT') absentDays++;
+         else if (status === 'HALF_DAY') halfDays++;
+         else if (status === 'LEAVE' || status === 'SICK') sickLeaves++;
+         else if (status === 'PERMISSION') {
+            presentDays++;
+         }
+      });
+      
+      const baseSalary = staffData.baseSalary || 0;
+      const totalDays = new Date(parseInt(yearMonth.split('-')[0]), parseInt(yearMonth.split('-')[1]), 0).getDate();
+      const perDaySalary = baseSalary / totalDays; 
+      const perHourSalary = perDaySalary / 9; // Assuming 9 hrs
+      
+      const lopAmount = (absentDays * perDaySalary) + (halfDays * (perDaySalary / 2));
+      
+      const slip = {
+         staffId,
+         staffName: staffData.name,
+         month: yearMonth,
+         baseSalary,
+         totalDays,
+         presentDays,
+         absentDays,
+         halfDays,
+         sickLeaves,
+         permissionHoursTaken: 0,
+         perDaySalary,
+         perHourSalary,
+         lopAmount,
+         permissionDeduction: 0,
+         netSalary: baseSalary - lopAmount
+      };
+      
+      return respond(slip);
     }
 
     // Commissions
@@ -165,7 +524,7 @@ const firestoreAdapter = async (config: any) => {
     // Appointments
     if (url.includes('/appointments/all') && method === 'get') {
       const snap = await getDocs(collection(db, 'appointments'));
-      return respond(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     }
     if (url.includes('/appointments/add') && method === 'post') {
       const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
@@ -184,11 +543,30 @@ const firestoreAdapter = async (config: any) => {
       return respond({ success: true });
     }
 
+    // Customer Packages
+    if (url.includes('/customer-packages/customer/') && method === 'get') {
+      const customerId = url.split('/').pop();
+      const q = query(collection(db, 'customer_packages'), where('customerId', '==', customerId));
+      const snap = await getDocs(q);
+      return respond(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }
+    if (url.includes('/customer-packages/add') && method === 'post') {
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const ref = await addDoc(collection(db, 'customer_packages'), parsedData);
+      return respond({ id: ref.id, ...parsedData });
+    }
+    if (url.includes('/customer-packages/use/') && method === 'patch') {
+      const id = url.split('/use/')[1];
+      const parsedData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const { serviceId, qty } = parsedData;
+      return respond({ id, success: true, dummy: true }); // A full implementation needs doc reads
+    }
+
     // Default fallback for unmapped endpoints to prevent crashes
     return respond([]);
   } catch (e) {
     console.error("Firestore adapter error", e);
-    return respond([]);
+    return Promise.reject(e);
   }
 };
 
@@ -361,7 +739,6 @@ export interface SalarySlip {
 export interface CreditTransaction {
   id?: string;
   vendorId?: string;
-  weaverId?: string;
   invoice?: string; // Added for compatibility with new backend
   amount: number;
   paidAmount: number;
@@ -470,6 +847,7 @@ export interface Product {
   purchaseDate?: string;
   createdAt?: string;
   updatedAt?: string;
+  dateAdded?: string;
   mrp?: number;
   creditTransactionId?: string;
   billNo?: string;
@@ -486,30 +864,34 @@ export interface Product {
 // Helper to map Backend Product to Frontend Product (handling alias)
 const mapProductFromBackend = (p: any): Product | null => {
   if (!p) return null;
-  const tracking = p.inventoryTracking || 'NOT_TRACKED';
+  const hasTrackedStock = p.stockQuantity !== null && p.stockQuantity !== undefined && p.stockQuantity !== '';
+  const tracking = p.inventoryTracking === 'NOT_TRACKED' ? 'NOT_TRACKED' : (p.inventoryTracking || (hasTrackedStock ? 'TRACKED' : 'NOT_TRACKED'));
+  
+  const parsedPrice = parseFloat((p.sellingPrice != null && Number(p.sellingPrice) > 0) ? p.sellingPrice : (p.price != null && Number(p.price) > 0 ? p.price : 0)) || 0;
+
   return {
     ...p,
     id: p.id || p._id || '',
-    name: p.name || '',
+    name: p.name || p.productName || '',
     brand: p.brand || '',
     category: p.category || '',
     subcategory: p.subcategory || '',
     sku: p.sku || '',
     billNo: p.billNo || p.billno || p.bill_number || p.invoiceNo || p.invoice_no || '',
-    barcode: p.barcode || p.productCode || '', 
+    barcode: p.barcode || p.productCode || p.id || '', 
     purchaseDate: p.purchaseDate || p.createdAt || '',
-    price: parseFloat(p.sellingPrice !== undefined ? p.sellingPrice : (p.price || 0)) || 0,
-    sellingPrice: parseFloat(p.sellingPrice || 0) || 0,
+    price: parsedPrice,
+    sellingPrice: parsedPrice,
     mrp: parseFloat(p.mrp || p.MRP || p.Mrp || 0) || 0,
     purchaseRate: parseFloat(p.purchaseRate || 0) || 0,
-    stockQuantity: tracking === 'NOT_TRACKED' ? null : (parseInt(p.stockQuantity || 0) || 0),
+    stockQuantity: tracking === 'NOT_TRACKED' ? null : (parseInt(p.stockQuantity || 0, 10) || 0),
     discount: parseFloat(p.discount || 0) || 0,
     purchaseGst: Number(p.purchaseGst) || 0,
     purchaseDisc: Number(p.purchaseDisc) || 0,
     availabilityStatus: p.availabilityStatus || 'AVAILABLE',
-    active: p.active !== undefined ? p.active : true,
+    active: p.active !== undefined ? Boolean(p.active) : true,
     inventoryTracking: tracking,
-    reorderLevel: p.reorderLevel ? parseInt(p.reorderLevel) : null,
+    reorderLevel: p.reorderLevel ? parseInt(p.reorderLevel, 10) : null,
     batchNumber: p.batchNumber || '',
     expiryDate: p.expiryDate || '',
     unit: p.unit || '',
@@ -521,12 +903,32 @@ const mapProductFromBackend = (p: any): Product | null => {
 
 // Helper to map Frontend Product to Backend Product
 const mapProductToBackend = (p: Partial<Product>): any => {
-  const { price, sellingPrice, stockQuantity, inventoryTracking, ...rest } = p;
+  const { price, sellingPrice, stockQuantity, inventoryTracking, dateAdded, createdAt, ...rest } = p;
+  
+  const finalPrice = parseFloat((sellingPrice != null && Number(sellingPrice) > 0) ? sellingPrice as any : (price != null && Number(price) > 0 ? price as any : 0)) || 0;
+
+  const hasTrackedStock = stockQuantity !== null && stockQuantity !== undefined && stockQuantity !== '';
+  const finalTracking = inventoryTracking === 'NOT_TRACKED' ? 'NOT_TRACKED' : (inventoryTracking || (hasTrackedStock ? 'TRACKED' : 'NOT_TRACKED'));
+  const finalStock = finalTracking === 'NOT_TRACKED' ? null : (parseInt(stockQuantity as any || 0, 10) || 0);
+
+  // Use dateAdded if provided (from Add Multiple UI), otherwise use existing createdAt (from CSV/Update), otherwise today.
+  const finalCreatedAt = dateAdded 
+    ? new Date(dateAdded).toISOString() 
+    : (createdAt ? new Date(createdAt).toISOString() : new Date().toISOString());
+
+  // Make sure imageFile or non-serializable objects aren't passed to Firestore
+  const { imageFile, ...cleanRest } = rest as any;
+
   return {
-    ...rest,
-    sellingPrice: sellingPrice !== undefined ? sellingPrice : price,
-    stockQuantity: inventoryTracking === 'NOT_TRACKED' ? null : stockQuantity,
-    inventoryTracking,
+    ...cleanRest,
+    price: finalPrice,
+    sellingPrice: finalPrice,
+    stockQuantity: finalStock,
+    inventoryTracking: finalTracking,
+    createdAt: finalCreatedAt,
+    purchaseDate: dateAdded || (cleanRest.purchaseDate || undefined),
+    availabilityStatus: cleanRest.availabilityStatus || 'AVAILABLE',
+    active: cleanRest.active !== undefined ? Boolean(cleanRest.active) : true,
   };
 };
 
@@ -703,25 +1105,17 @@ export interface Bill {
 
 export const billingApi = {
   create: async (data: Bill) => {
-    try {
-      const response = await fetch("http://localhost:5000/api/process-billing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Failed to process bill");
-      // Format the response to match what the app expects (an Axios response with .data)
-      return { data: { id: result.billId, ...result.bill } };
-    } catch (e) {
-      console.error("Backend billing error:", e);
-      throw e;
-    }
+    // Route through billingService which has the Firestore adapter interceptor
+    // This handles bill creation, stock deduction, and stock transaction logging
+    const response = await billingService.post('/billing/create', data);
+    return response;
   },
   update: (id: string, data: Partial<Bill>) => billingService.patch(`/billing/update/${id}`, data), // Added generic update
   hold: (data: Bill) => billingService.post('/billing/hold', data),
 
   cancelHold: (id: string) => billingService.put(`/billing/${id}/cancel`),
+  cancelBill: (id: string) => billingService.put(`/billing/${id}/cancel`),
+  refundBill: (id: string) => billingService.put(`/billing/${id}/refund`),
   returnBill: (id: string, data: Bill) => billingService.put(`/billing/${id}/return`, data),
   pay: (id: string, data: any) => billingService.patch(`/billing/${id}/pay`, data),
   recordPayment: (id: string, amount: number, paymentMode: string, description?: string) =>
@@ -748,6 +1142,10 @@ export interface Customer {
   email?: string;
   address?: string;
   gstin?: string;
+  dob?: string;
+  anniversary?: string;
+  preferredStaff?: string;
+  notes?: string;
   loyaltyPoints?: number;
   totalSpent?: number;
   totalPaid?: number; // Added totalPaid
@@ -793,6 +1191,11 @@ export const mapCustomerFromBackend = (c: any): Customer => ({
   phone: c.phone || c.contact || '',
   address: c.address || c.Address || c.location || '',
   gstin: c.gstin || c.gst || c.gstNo || '',
+  dob: c.dob || '',
+  anniversary: c.anniversary || '',
+  preferredStaff: c.preferredStaff || '',
+  notes: c.notes || '',
+  loyaltyPoints: c.loyaltyPoints || 0,
 });
 
 export const mapViewerFromBackend = (v: any): Viewer => ({
@@ -830,76 +1233,7 @@ export const customerApi = {
   }
 };
 
-/*
-export const viewerApi = {
-  add: (data: Partial<Viewer>) => customerService.post('/weavers/add', data),
-  getAll: async () => {
-    const res = await customerService.get<Viewer[]>('/weavers/all');
-    if (res.data && Array.isArray(res.data)) {
-      res.data = res.data.map(mapViewerFromBackend);
-    }
-    return res;
-  },
-  update: (id: string, data: Partial<Viewer>) => customerService.patch(`/weavers/update/${id}`, data),
-  delete: (id: string) => customerService.delete(`/weavers/delete/${id}`),
-};
 
-export const manufacturingApi = {
-  add: (viewerId: string, data: ManufacturingRecord) => customerService.post(`/weavers/${viewerId}/manufacturing/add`, data),
-  getAll: (viewerId: string) => customerService.get<ManufacturingRecord[]>(`/weavers/${viewerId}/manufacturing/all`),
-  update: (viewerId: string, recordId: string, data: Partial<ManufacturingRecord>) =>
-    customerService.patch(`/weavers/${viewerId}/manufacturing/update/${recordId}`, data),
-  delete: (viewerId: string, recordId: string) =>
-    customerService.delete(`/weavers/${viewerId}/manufacturing/delete/${recordId}`),
-};
-
-export const polishingApi = {
-  add: (viewerId: string, data: PolishingRecord) => customerService.post(`/weavers/${viewerId}/polishing/add`, data),
-  getAll: (viewerId: string) => customerService.get<PolishingRecord[]>(`/weavers/${viewerId}/polishing/all`),
-  update: (viewerId: string, recordId: string, data: Partial<PolishingRecord>) =>
-    customerService.patch(`/weavers/${viewerId}/polishing/update/${recordId}`, data),
-  delete: (viewerId: string, recordId: string) =>
-    customerService.delete(`/weavers/${viewerId}/polishing/delete/${recordId}`),
-};
-*/
-
-export const rawMaterialApi = {
-  add: (data: RawMaterial) => customerService.post('/raw-materials/add', data),
-  getAll: () => customerService.get<RawMaterial[]>('/raw-materials/all'),
-  update: (id: string, data: Partial<RawMaterial>, isInlineEdit?: boolean) => 
-    customerService.patch(`/raw-materials/update/${id}${isInlineEdit ? '?isInlineEdit=true' : ''}`, data),
-  delete: (id: string) => customerService.delete(`/raw-materials/delete/${id}`),
-};
-
-/*
-export const weaverProductApi = {
-  add: (data: Partial<WeaverProduct>) => customerService.post('/weaver-products/add', data),
-  getAll: () => customerService.get<WeaverProduct[]>('/weaver-products/all'),
-  getByWeaver: (weaverId: string) => customerService.get<WeaverProduct[]>(`/weaver-products/weaver/${weaverId}`),
-  getByBarcode: (barcode: string) => customerService.get<WeaverProduct>(`/weaver-products/barcode/${barcode}`),
-  update: (id: string, data: Partial<WeaverProduct>) => customerService.patch(`/weaver-products/update/${id}`, data),
-  updateQty: (id: string, qty: number) => customerService.patch(`/weaver-products/${id}/qty?qty=${qty}`),
-  delete: (id: string) => customerService.delete(`/weaver-products/delete/${id}`),
-  uploadImage: async (id: string, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return customerService.post(`/weaver-products/${id}/image`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-  },
-  deleteImage: (id: string) => customerService.delete(`/weaver-products/${id}/image`),
-};
-
-export const weaverCreditApi = {
-  getCredits: (weaverId: string) => customerService.get<CreditTransaction[]>(`/weavers/transactions/weaver/${weaverId}`),
-  addCredit: (data: CreditTransaction) => customerService.post('/weavers/transactions/add', data),
-  updateCredit: (id: string, data: Partial<CreditTransaction>) => customerService.patch(`/weavers/transactions/update/${id}`, data),
-  recordPayment: (id: string, amount: number, paymentMode?: string, description?: string) =>
-    customerService.put(`/weavers/transactions/${id}/pay`, null, { params: { amount, paymentMode, paymentDescription: description } }),
-  deleteCredit: (id: string) => customerService.delete(`/weavers/transactions/delete/${id}`),
-  getCreditsRange: (start: string, end: string) => customerService.get<CreditTransaction[]>(`/weavers/transactions/range?startDate=${start}&endDate=${end}`),
-};
-*/
 
 
 
@@ -987,7 +1321,7 @@ export interface Estimation {
   totalDiscountAmount?: number;
   totalGstAmount?: number;
   finalAmount?: number;
-  systemType?: 'Retail' | 'Wholesale'; // Added systemType
+  systemType?: 'Retail' | 'SERVICE' | 'PACKAGE'; // Added systemType
   createdAt?: string;
 }
 
@@ -1003,4 +1337,83 @@ export const appointmentApi = {
   add: (data: Partial<Appointment>) => appointmentService.post('/appointments/add', data),
   update: (id: string, data: Partial<Appointment>) => appointmentService.patch(`/appointments/update/${id}`, data),
   delete: (id: string) => appointmentService.delete(`/appointments/delete/${id}`),
+};
+
+// --- Stock Transaction API ---
+
+export interface StockTransaction {
+  id?: string;
+  productId: string;
+  productName: string;
+  transactionType: 'OPENING_STOCK' | 'STOCK_IN' | 'SALE' | 'DAMAGED' | 'ADJUSTMENT' | 'CORRECTION';
+  quantity: number;
+  previousStock: number;
+  resultingStock: number;
+  referenceType?: 'SUPPLIER' | 'BILL' | 'MANUAL';
+  referenceId?: string;
+  reason?: string;
+  createdAt?: string;
+  createdBy?: string;
+}
+
+export const stockTransactionApi = {
+  getAll: () => productService.get<StockTransaction[]>('/stock-transactions/all'),
+  add: (data: StockTransaction) => productService.post('/stock-transactions/add', data),
+  getByProduct: async (productId: string) => {
+    const res = await productService.get<StockTransaction[]>('/stock-transactions/all');
+    if (res.data && Array.isArray(res.data)) {
+      res.data = res.data.filter(t => t.productId === productId).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    }
+    return res;
+  }
+};
+
+// --- Packages API ---
+
+export interface PackageItem {
+  serviceId: string;
+  serviceName?: string;
+  quantity: number;
+}
+
+export interface SalonPackage {
+  id?: string;
+  name: string;
+  description?: string;
+  price: number;
+  isActive: boolean;
+  items: PackageItem[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const packageApi = {
+  getAll: () => productService.get<SalonPackage[]>('/packages/all'),
+  add: (data: Partial<SalonPackage>) => productService.post('/packages/add', data),
+  update: (id: string, data: Partial<SalonPackage>) => productService.patch(`/packages/update/${id}`, data),
+  delete: (id: string) => productService.delete(`/packages/delete/${id}`),
+};
+
+export interface CustomerPackageUsage {
+  serviceId: string;
+  serviceName: string;
+  totalQuantity: number;
+  usedQuantity: number;
+}
+
+export interface CustomerPackage {
+  id?: string;
+  customerId: string;
+  packageId: string;
+  packageName: string;
+  purchaseDate: string;
+  billId?: string;
+  isActive: boolean;
+  items: CustomerPackageUsage[];
+}
+
+export const customerPackageApi = {
+  getByCustomer: (customerId: string) => productService.get<CustomerPackage[]>(`/customer-packages/customer/${customerId}`),
+  add: (data: Partial<CustomerPackage>) => productService.post('/customer-packages/add', data),
+  updateUsage: (id: string, serviceId: string, qty: number) => productService.patch(`/customer-packages/use/${id}`, { serviceId, qty }),
 };

@@ -90,7 +90,7 @@ const Contact = () => {
               Get in <span className="text-gradient-salon">Touch</span>
             </motion.h2>
             <motion.p
-              className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed"
+              className="text-base text-gray-600 max-w-3xl mx-auto leading-relaxed"
               initial={{ opacity: 0 }}
               whileInView={{ opacity: 1 }}
               transition={{ delay: 0.3, duration: 0.8 }}
@@ -141,7 +141,7 @@ const Contact = () => {
                     href={item.buttonLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-block px-8 py-3 mt-6 font-bold text-gray-800 transition-bounce bg-gradient-to-r from-yellow-300 to-orange-400 rounded-full hover:scale-105"
+                    className="inline-block px-5 py-2 text-sm mt-6 font-bold text-gray-800 transition-bounce bg-gradient-to-r from-yellow-300 to-orange-400 rounded-full hover:scale-105"
                   >
                     {item.buttonText}
                   </a>

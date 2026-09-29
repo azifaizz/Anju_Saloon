@@ -55,7 +55,7 @@ const About = () => {
             <h2 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-gray-900">
               About <span className="text-gradient-salon">Anjus Beauty Saloon</span>
             </h2>
-            <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+            <p className="text-base text-gray-600 max-w-3xl mx-auto leading-relaxed">
               For years, we have been dedicated to bringing the finest
               salon services and premium cosmetics to our customers, blending professional
               care with modern beauty trends.

@@ -12,7 +12,7 @@ import {
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { format, subDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, startOfYear, endOfMonth, endOfYear, addDays } from 'date-fns';
-import { billingApi, productApi, daybookApi, vendorApi, appointmentApi, Bill, Product, Vendor, DayBookEntry, Appointment } from '@/lib/api';
+import { billingApi, productApi, daybookApi, vendorApi, appointmentApi, customerApi, staffApi, Bill, Product, Vendor, DayBookEntry, Appointment, Customer, Staff } from '@/lib/api';
 import LowStockProductsModal from './LowStockProductsModal';
 
 type DashboardPeriod = 'day' | 'week' | 'month' | 'year';
@@ -31,6 +31,8 @@ const DashboardOverview = () => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [expenses, setExpenses] = useState<DayBookEntry[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [chartDataFetched, setChartDataFetched] = useState<any[]>([]);
 
   // UI state
@@ -100,21 +102,25 @@ const DashboardOverview = () => {
     const fetchGlobalData = async () => {
       setLoading(true);
       try {
-        const [billsRes, productsRes, vendorsRes, daybookRes, apptsRes] = await Promise.all([
+        const [billsRes, productsRes, vendorsRes, daybookRes, apptsRes, custRes, staffRes] = await Promise.all([
           billingApi.getAll(),
           productApi.getAll(),
           vendorApi.getAll(),
           daybookApi.getSummary(),
-          appointmentApi.getAll()
+          appointmentApi.getAll(),
+          customerApi.getAll(),
+          staffApi.getAll()
         ]);
 
         if (Array.isArray(billsRes.data)) setBills(billsRes.data);
         if (Array.isArray(productsRes.data)) setProducts(productsRes.data);
         if (Array.isArray(vendorsRes.data)) setVendors(vendorsRes.data);
         if (daybookRes.data && daybookRes.data.entries) {
-          setExpenses(daybookRes.data.entries.filter(e => e.type === 'EXPENSE'));
+          setExpenses(daybookRes.data.entries.filter((e: any) => e.type === 'EXPENSE'));
         }
         if (Array.isArray(apptsRes.data)) setAppointments(apptsRes.data);
+        if (Array.isArray(custRes.data)) setCustomers(custRes.data);
+        if (Array.isArray(staffRes.data)) setStaff(staffRes.data);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
@@ -243,10 +249,13 @@ const DashboardOverview = () => {
 
 
   // KPIs
-  const { totalRevenue, totalTransactions, totalProfit, totalCOGS } = useMemo(() => {
+  const { totalRevenue, totalTransactions, totalProfit, totalCOGS, serviceRevenue, productRevenue, totalCommission } = useMemo(() => {
     let rev = 0;
     let profit = 0;
     let cogs = 0;
+    let sRev = 0;
+    let pRev = 0;
+    let comm = 0;
 
     // Create a product map for quick lookup
     const productMap = new Map(products.map(p => [p.name, p]));
@@ -256,6 +265,8 @@ const DashboardOverview = () => {
       const finalAmt = bill.finalAmount || bill.amountPaid || 0;
       rev += finalAmt;
 
+      comm += Number(bill.staffCommissionAmount) || 0;
+
       // Estimate profit and COGS
       let billCost = 0;
       bill.items?.forEach(item => {
@@ -264,8 +275,16 @@ const DashboardOverview = () => {
           billCost += (prod.purchaseRate || 0) * item.quantity;
         } else {
           // rough estimate if product not found (30% margin)
-          billCost += item.unitPrice * item.quantity * 0.7;
+          billCost += (item.unitPrice * item.quantity) * 0.7;
         }
+        
+        const isService = item.type === 'SERVICE' || !!item.serviceId;
+        const itemNet = item.netAmount || (item.unitPrice * item.quantity - (item.discountAmount || 0));
+        
+        if (isService) sRev += itemNet;
+        else pRev += itemNet;
+
+        if (item.staffCommissionAmount) comm += Number(item.staffCommissionAmount);
       });
       cogs += billCost;
       profit += (finalAmt - billCost);
@@ -275,7 +294,10 @@ const DashboardOverview = () => {
       totalRevenue: rev,
       totalTransactions: filteredBills.length,
       totalProfit: profit,
-      totalCOGS: cogs
+      totalCOGS: cogs,
+      serviceRevenue: sRev,
+      productRevenue: pRev,
+      totalCommission: comm
     };
   }, [filteredBills, products]);
 
@@ -550,36 +572,36 @@ const DashboardOverview = () => {
   }
 
   return (
-    <div className="p-6 bg-slate-50 min-h-full space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-sm text-slate-500">Business performance and analytics</p>
+    <div className="p-8 bg-white min-h-full space-y-10 font-sans">
+      <div className="flex flex-col xl:flex-row gap-6 justify-between items-start xl:items-center">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
+          <p className="text-sm text-slate-500 font-medium">Business performance and analytics</p>
         </div>
-        <div className="flex gap-4 items-center">
+        <div className="flex flex-wrap gap-4 items-center w-full xl:w-auto">
 
-          <div className="flex gap-3 items-center">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-slate-500 uppercase">From</label>
+            <div className="flex flex-wrap gap-3 items-center w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">From</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="border-slate-200 rounded-lg text-xs bg-slate-50 focus:ring-blue-500 px-3 py-1.5 border outline-none font-bold"
+                className="border-slate-200 rounded text-xs bg-slate-50 focus:ring-slate-400 px-3 py-2 border outline-none font-medium w-full sm:w-auto"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-slate-500 uppercase">To</label>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">To</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="border-slate-200 rounded-lg text-xs bg-slate-50 focus:ring-blue-500 px-3 py-1.5 border outline-none font-bold"
+                className="border-slate-200 rounded text-xs bg-slate-50 focus:ring-slate-400 px-3 py-2 border outline-none font-medium w-full sm:w-auto"
               />
             </div>
             <button
               onClick={handleDownloadReport}
-              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+              className="flex justify-center items-center gap-2 bg-blue-600 text-white px-4 py-2 text-sm rounded hover:bg-blue-700 transition-colors w-full sm:w-auto mt-2 sm:mt-0 font-medium"
             >
               <Download size={16} /> Download Report
             </button>
@@ -588,82 +610,115 @@ const DashboardOverview = () => {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {/* Total Revenue */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Total Revenue</p>
-            <h3 className="text-xl font-bold text-slate-800">₹{totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Revenue</p>
+            <DollarSign size={16} className="text-slate-400" />
           </div>
-          <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
-            <DollarSign size={18} />
-          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">₹{totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
         </div>
 
         {/* Total Profit */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Total Profit</p>
-            <h3 className="text-xl font-bold text-slate-800">₹{totalProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Profit</p>
+            <TrendingUp size={16} className="text-slate-400" />
           </div>
-          <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
-            <TrendingUp size={18} />
-          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">₹{totalProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
         </div>
 
         {/* Total Expense */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Total Expense</p>
-            <h3 className="text-xl font-bold text-slate-800">₹{totalExpenseAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Expense</p>
+            <TrendingDown size={16} className="text-slate-400" />
           </div>
-          <div className="w-9 h-9 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center">
-            <TrendingDown size={18} />
-          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">₹{totalExpenseAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
         </div>
 
         {/* Mode of Transactions */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm hover:shadow-md transition">
-          <div className="flex items-start justify-between mb-1">
-            <p className="text-xs font-medium text-slate-500">Transactions</p>
-            <div className="w-9 h-9 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center">
-              <ShoppingCart size={18} />
-            </div>
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex items-start justify-between mb-2">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Transactions</p>
+            <ShoppingCart size={16} className="text-slate-400" />
           </div>
-          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-            <div className="flex items-center justify-between text-xs text-slate-600"><span>UPI:</span> <span className="font-bold">{txStats.upi}</span></div>
-            <div className="flex items-center justify-between text-xs text-slate-600"><span>Cash:</span> <span className="font-bold">{txStats.cash}</span></div>
-            <div className="flex items-center justify-between text-xs text-slate-600"><span>Card:</span> <span className="font-bold">{txStats.card}</span></div>
-            <div className="flex items-center justify-between text-xs text-slate-600"><span>Split:</span> <span className="font-bold">{txStats.split}</span></div>
-            <div className="flex items-center justify-between text-xs text-purple-600 font-bold"><span>Partial:</span> <span className="font-bold">{txStats.partial}</span></div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+            <div className="flex items-center justify-between text-xs text-slate-600"><span>UPI</span> <span className="font-semibold text-slate-900">{txStats.upi}</span></div>
+            <div className="flex items-center justify-between text-xs text-slate-600"><span>Cash</span> <span className="font-semibold text-slate-900">{txStats.cash}</span></div>
+            <div className="flex items-center justify-between text-xs text-slate-600"><span>Card</span> <span className="font-semibold text-slate-900">{txStats.card}</span></div>
+            <div className="flex items-center justify-between text-xs text-slate-600"><span>Split</span> <span className="font-semibold text-slate-900">{txStats.split}</span></div>
+            <div className="flex items-center justify-between text-xs text-slate-600"><span>Partial</span> <span className="font-semibold text-slate-900">{txStats.partial}</span></div>
           </div>
         </div>
 
         {/* Low Stock Alerts */}
         <div
-          className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition cursor-pointer"
+          className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px] cursor-pointer hover:border-slate-300 transition-colors"
           onClick={() => setIsLowStockModalOpen(true)}
         >
-          <div>
-            <p className="text-xs font-medium text-slate-500">Low Stock</p>
-            <h3 className="text-xl font-bold text-slate-800">
-              {lowStockProducts.length}
-            </h3>
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Low Stock</p>
+            <AlertTriangle size={16} className={lowStockProducts.length > 0 ? 'text-amber-500' : 'text-slate-400'} />
           </div>
-          <div className={`w-9 h-9 rounded-full flex items-center justify-center ${(lowStockProducts.length) > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-            <AlertTriangle size={18} />
-          </div>
+          <h3 className={`text-2xl font-semibold tracking-tighter ${lowStockProducts.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+            {lowStockProducts.length}
+          </h3>
         </div>
 
         {/* Appointments */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Appointments</p>
-            <h3 className="text-xl font-bold text-slate-800">{totalAppointmentsCount}</h3>
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Appointments</p>
+            <Calendar size={16} className="text-slate-400" />
           </div>
-          <div className="w-9 h-9 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center">
-            <Calendar size={18} />
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">{totalAppointmentsCount}</h3>
+        </div>
+
+        {/* Service Revenue */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Services</p>
+            <TrendingUp size={16} className="text-slate-400" />
           </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">₹{serviceRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        </div>
+
+        {/* Product Revenue */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Products</p>
+            <Package size={16} className="text-slate-400" />
+          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">₹{productRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        </div>
+
+        {/* Total Commission */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Commission</p>
+            <Users size={16} className="text-slate-400" />
+          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">₹{totalCommission.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        </div>
+
+        {/* Customers Count */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Customers</p>
+            <Users size={16} className="text-slate-400" />
+          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">{customers.length}</h3>
+        </div>
+
+        {/* Staff Count */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-between min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Active Staff</p>
+            <Users size={16} className="text-slate-400" />
+          </div>
+          <h3 className="text-2xl font-semibold tracking-tighter text-slate-900">{staff.filter(s => s.isActive).length}</h3>
         </div>
       </div>
 
@@ -674,13 +729,13 @@ const DashboardOverview = () => {
       />
 
       {/* Time Range Toggle Row */}
-      <div className="flex justify-end mb-4">
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-sm">
+      <div className="flex justify-end">
+        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto max-w-full">
           {(['day', 'week', 'month', 'year'] as const).map(view => (
             <button
               key={view}
               onClick={() => setDashboardView(view)}
-              className={`px-4 py-1.5 text-[10px] font-black rounded-lg transition-all ${dashboardView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`px-4 py-1.5 text-[11px] font-semibold rounded transition-all tracking-wider uppercase ${dashboardView === view ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
             >
               {view.toUpperCase()}
             </button>
@@ -689,10 +744,10 @@ const DashboardOverview = () => {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 lg:col-span-2">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-slate-800 text-lg">Earnings vs Expenses</h3>
+            <h3 className="text-lg font-semibold text-slate-900 tracking-tight">Earnings vs Expenses</h3>
           </div>
           <div className="h-[300px]">
             {chartDataFetched.length === 0 ? (
@@ -715,12 +770,10 @@ const DashboardOverview = () => {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-slate-800 text-lg">Revenue Distribution</h3>
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-              <span className="text-[10px] font-black text-blue-600 px-2 py-1 bg-white rounded shadow-sm">SYNCED VIEW</span>
-            </div>
+            <h3 className="text-lg font-semibold text-slate-900 tracking-tight">Revenue Distribution</h3>
+            <span className="text-[10px] font-semibold text-slate-500 px-2 py-1 bg-slate-100 rounded uppercase tracking-wider">Synced</span>
           </div>
           <div className="h-[250px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -742,30 +795,29 @@ const DashboardOverview = () => {
       <div className="grid grid-cols-1 gap-6">
 
         {/* Top 5 Performing Products Table */}
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-              <TrendingUp size={20} className="text-emerald-500" />
+        <div className="bg-white p-6 rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h3 className="text-lg font-semibold text-slate-900 tracking-tight">
               Top 5 Performing Products
             </h3>
-            <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 shadow-sm">
-              Based on Quantity Sold
+            <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded uppercase tracking-wider">
+              By Quantity Sold
             </span>
           </div>
 
           <div className="overflow-x-auto max-h-[400px] custom-scrollbar">
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-white shadow-sm z-10">
-                <tr className="text-[10px] text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-slate-50">
-                  <th className="p-3 font-bold text-center">Rank</th>
-                  <th className="p-3 font-bold whitespace-nowrap">Date</th>
-                  <th className="p-3 font-bold">Product ID</th>
-                  <th className="p-3 font-bold">Product Name</th>
-                  <th className="p-3 font-bold">Category</th>
-                  <th className="p-3 font-bold whitespace-nowrap">Purchase Price</th>
-                  <th className="p-3 font-bold whitespace-nowrap">Selling Price</th>
-                  <th className="p-3 font-bold text-center">Qty Sold</th>
-                  <th className="p-3 font-bold text-center">Stock</th>
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="text-[11px] text-slate-500 uppercase tracking-widest border-b border-slate-200">
+                  <th className="p-4 font-semibold text-center">Rank</th>
+                  <th className="p-4 font-semibold whitespace-nowrap">Date</th>
+                  <th className="p-4 font-semibold">Product ID</th>
+                  <th className="p-4 font-semibold">Product Name</th>
+                  <th className="p-4 font-semibold">Category</th>
+                  <th className="p-4 font-semibold whitespace-nowrap">Purchase Price</th>
+                  <th className="p-4 font-semibold whitespace-nowrap">Selling Price</th>
+                  <th className="p-4 font-semibold text-center">Qty Sold</th>
+                  <th className="p-4 font-semibold text-center">Stock</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -866,7 +918,7 @@ const DashboardOverview = () => {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <div className="bg-blue-600 p-4 rounded-2xl text-white">
                   <p className="text-[10px] uppercase font-black opacity-80">Product ID</p>
-                  <p className="text-lg font-mono font-black truncate">{selectedProductDetails.id}</p>
+                  <p className="text-base font-mono font-black truncate">{selectedProductDetails.id}</p>
                 </div>
                 <div className="bg-slate-100 p-4 rounded-2xl border border-slate-200">
                   <p className="text-[10px] uppercase font-black text-slate-400">Total Units Sold</p>
@@ -929,7 +981,7 @@ const DashboardOverview = () => {
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
               <button
                 onClick={() => setSelectedProductDetails(null)}
-                className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-black text-sm hover:bg-slate-900 transition"
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black text-sm hover:bg-blue-700 transition"
               >
                 CLOSE DETAILS
               </button>
@@ -939,8 +991,8 @@ const DashboardOverview = () => {
       )}
 
       {/* Pricing Insights */}
-      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-        <h3 className="font-bold text-slate-800 mb-6 text-lg">Best Selling Products UI (Pricing)</h3>
+      <div className="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 className="text-lg font-semibold text-slate-900 tracking-tight mb-6">Best Selling Products (Pricing)</h3>
         <div className="h-[360px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={topSellingProducts} layout="horizontal" margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
@@ -1028,26 +1080,26 @@ const DashboardOverview = () => {
 
       {/* Pricing Insights & Margins Row */}
       <div className="pb-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm font-sans">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
-              <DollarSign size={20} className="text-blue-500" /> Pricing Insights & Margins
+        <div className="bg-white p-6 rounded-xl border border-slate-200 font-sans">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h3 className="text-lg font-semibold text-slate-900 tracking-tight">
+              Pricing Insights & Margins
             </h3>
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <input
                 type="text"
-                placeholder="Search Product Name..."
+                placeholder="Search product..."
                 value={bottomTableSearch}
                 onChange={(e) => setBottomTableSearch(e.target.value)}
-                className="pl-3 pr-8 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none w-48 font-medium"
+                className="pl-3 pr-8 py-2 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-slate-400 outline-none w-full sm:w-48 font-medium"
               />
               <Package size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
             </div>
           </div>
           <div className="max-h-[500px] overflow-auto custom-scrollbar border border-slate-200 rounded-lg">
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-slate-100 shadow-sm z-10">
-                <tr className="text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-200">
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="text-slate-500 text-[11px] uppercase font-semibold tracking-widest border-b border-slate-200">
                   <th className="p-4 text-center">Rank</th>
                   <th className="p-4 whitespace-nowrap">Date</th>
                   <th className="p-4">Product ID</th>

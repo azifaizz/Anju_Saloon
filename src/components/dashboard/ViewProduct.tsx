@@ -120,7 +120,7 @@ const ViewProduct = () => {
                 <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tight">{error}</h2>
                 <button 
                     onClick={() => navigate(-1)}
-                    className="mt-6 px-6 py-2 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all"
+                    className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all"
                 >
                     Go Back
                 </button>
@@ -207,7 +207,7 @@ const ViewProduct = () => {
                                         <span className="text-gray-500 font-bold flex items-center gap-2">
                                             <IndianRupee size={16} className="text-gray-400" /> Amount
                                         </span>
-                                        <span className="font-black text-emerald-600 text-lg">
+                                        <span className="font-black text-emerald-600 text-base">
                                             ₹{(item.netAmount || (item.unitPrice * (item.quantity || 1))).toLocaleString()}
                                         </span>
                                     </div>

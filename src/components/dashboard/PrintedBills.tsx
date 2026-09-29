@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { billingService, estimationApi, billingApi } from "@/lib/api";
+import { billingService, billingApi } from "@/lib/api";
 import { useGlobalData } from "@/context/GlobalDataContext";
 import { utils, writeFile } from "xlsx";
 import { Printer, FileText, Search, FileSpreadsheet, Eye, Edit3 } from "lucide-react";
@@ -12,6 +12,8 @@ import { mapExeBillData } from "@/utils/exeBillAdapter";
 import { useReactToPrint } from 'react-to-print';
 import { numberToWords } from "@/utils/numberToWords";
 import { useNavigate } from "react-router-dom";
+import { useConfirm } from "@/hooks/useConfirm";
+import { Trash2, RotateCcw } from "lucide-react";
 
 interface BillItem {
   productId?: string;
@@ -26,7 +28,6 @@ interface BillItem {
 
 interface Bill {
   id?: string;
-  estimationId?: string;
   invoiceId?: string;
   customerName?: string;
   customerPhone?: string | number;
@@ -46,8 +47,9 @@ const PrintedBills: React.FC = () => {
     refreshBills, 
     refreshCancelled 
   } = useGlobalData();
+  const { confirm, ConfirmationDialog } = useConfirm();
 
-  const [activeTab, setActiveTab] = useState<"BILL" | "ESTIMATION">("BILL");
+  const [activeTab, setActiveTab] = useState<"BILL">("BILL");
   const [data, setData] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -62,33 +64,46 @@ const PrintedBills: React.FC = () => {
     contentRef: printRef,
   });
 
+  const handleCancelBill = (id: string) => {
+    confirm("Are you sure you want to cancel this bill? This will restore stock, reverse commissions, and void the revenue.", async () => {
+      try {
+        setLoading(true);
+        await billingApi.cancelBill(id);
+        toast.success("Bill cancelled successfully!");
+        await refreshBills();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || err.message || "Failed to cancel bill");
+      } finally {
+        setLoading(false);
+      }
+    });
+  };
+
+  const handleRefundBill = (id: string) => {
+    confirm("Are you sure you want to refund this bill? This will mark it as refunded, restore stock, and reverse commissions.", async () => {
+      try {
+        setLoading(true);
+        await billingApi.refundBill(id);
+        toast.success("Bill refunded successfully!");
+        await refreshBills();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || err.message || "Failed to refund bill");
+      } finally {
+        setLoading(false);
+      }
+    });
+  };
+
   const [shopName] = useLocalStorage("shopName_v3", APP_CONFIG.COMPANY_NAME);
   const [billMessage] = useLocalStorage("billMessage", "Thank You For Your Purchasing");
   const [gstNumber] = useLocalStorage("gstNumber", "");
 
   useEffect(() => {
-    if (activeTab === "ESTIMATION") {
-      fetchEstimations();
-    } else {
-      refreshBills();
-    }
+    refreshBills();
   }, [activeTab]);
 
-  const fetchEstimations = async () => {
-    try {
-      setLoading(true);
-      const res = await estimationApi.getAll();
-      setData(res.data || []);
-    } catch (err) {
-      toast.error("Failed to load estimations");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const currentSourceData = React.useMemo(() => {
-    if (activeTab === "BILL") return globalBills;
-    return data; // Estimations
+    return globalBills;
   }, [activeTab, globalBills, data]);
 
   const normalizedData = React.useMemo(() => {
@@ -134,7 +149,7 @@ const PrintedBills: React.FC = () => {
 
     if (!searchTerm) return true;
     const lower = searchTerm.toLowerCase();
-    const id = (item.estimationId || item.invoiceId || item.id || "").toLowerCase();
+    const id = (item.invoiceId || item.id || "").toLowerCase();
     const name = (item.customerName || "").toLowerCase();
     const phone = (item.customerPhone || "").toString();
 
@@ -151,7 +166,7 @@ const PrintedBills: React.FC = () => {
 
     const excelData = filteredData.map((item, i) => ({
       "S.No": i + 1,
-      "ID": item.estimationId || item.invoiceId || item.id,
+      "ID": item.invoiceId || item.id,
       "Customer Name": item.customerName || "Walk-in",
       "Contact": item.customerPhone || "N/A",
       "Date": new Date(item.createdAt).toLocaleDateString("en-GB"),
@@ -161,8 +176,8 @@ const PrintedBills: React.FC = () => {
 
     const ws = utils.json_to_sheet(excelData);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, activeTab === "BILL" ? "Bills" : "Estimations");
-    writeFile(wb, `${activeTab}_History.xlsx`);
+    utils.book_append_sheet(wb, ws, "Bills");
+    writeFile(wb, `Bills_History.xlsx`);
   };
 
   const handlePrintAction = (item: Bill) => {
@@ -307,20 +322,6 @@ const PrintedBills: React.FC = () => {
           <FileText className="text-blue-600" /> Bills History
         </h1>
 
-        <div className="flex bg-gray-200 p-1 rounded-xl shadow-inner">
-          <button
-            onClick={() => setActiveTab("BILL")}
-            className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === "BILL" ? "bg-[#4488ff] text-white shadow-md" : "text-gray-500 hover:text-gray-700"}`}
-          >
-            PRINTED BILLS
-          </button>
-          <button
-            onClick={() => setActiveTab("ESTIMATION")}
-            className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === "ESTIMATION" ? "bg-[#4488ff] text-white shadow-md" : "text-gray-500 hover:text-gray-700"}`}
-          >
-            ESTIMATIONS
-          </button>
-        </div>
       </div>
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-center">
@@ -328,7 +329,7 @@ const PrintedBills: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
-            placeholder={activeTab === "BILL" ? "Search Invoice, Name..." : "Search Estimation, Name..."}
+            placeholder="Search Invoice, Name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder:text-gray-400"
@@ -357,17 +358,17 @@ const PrintedBills: React.FC = () => {
           onClick={handleExportExcel}
           className="px-6 py-2 bg-[#28a745] text-white font-bold rounded-xl hover:bg-[#218838] flex items-center gap-2 transition-all shadow-sm"
         >
-          <FileSpreadsheet size={18} /> {activeTab === "ESTIMATION" ? "Export Estimations" : "Export Bills"}
+          <FileSpreadsheet size={18} /> Export Bills
         </button>
 
         <div className="flex items-center gap-2">
-          <div className="bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 flex items-center gap-2">
+          <div className="bg-blue-50 px-3 py-1.5 text-sm rounded-xl border border-blue-100 flex items-center gap-2">
             <span className="text-sm font-bold text-gray-600">Count:</span>
-            <span className="text-lg font-black text-blue-700">{filteredData.length}</span>
+            <span className="text-base font-black text-blue-700">{filteredData.length}</span>
           </div>
-          <div className="bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 flex items-center gap-2">
+          <div className="bg-indigo-50 px-3 py-1.5 text-sm rounded-xl border border-indigo-100 flex items-center gap-2">
             <span className="text-sm font-bold text-gray-600">Total:</span>
-            <span className="text-lg font-black text-indigo-700">₹{totalAmount.toLocaleString('en-IN')}</span>
+            <span className="text-base font-black text-indigo-700">₹{totalAmount.toLocaleString('en-IN')}</span>
           </div>
         </div>
       </div>
@@ -377,7 +378,7 @@ const PrintedBills: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-500 font-bold text-xs uppercase tracking-tight border-b border-gray-100">
-                <th className="p-4">{activeTab === "BILL" ? "Invoice ID" : "Estimation ID"}</th>
+                <th className="p-4">Invoice ID</th>
                 <th className="p-4">Customer Name</th>
                 <th className="p-4">Contact</th>
                 <th className="p-4">Date & Time</th>
@@ -394,7 +395,7 @@ const PrintedBills: React.FC = () => {
               ) : filteredData.length > 0 ? (
                 filteredData.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="p-4 font-mono font-bold text-blue-600 cursor-pointer">{item.estimationId || item.invoiceId || item.id}</td>
+                    <td className="p-4 font-mono font-bold text-blue-600 cursor-pointer">{item.invoiceId || item.id}</td>
                     <td className="p-4 font-bold text-gray-700 uppercase">{item.customerName || "Walk-in"}</td>
                     <td className="p-4 text-gray-600 font-medium">{item.customerPhone || "N/A"}</td>
                     <td className="p-4 text-gray-500 text-xs font-medium">
@@ -414,6 +415,10 @@ const PrintedBills: React.FC = () => {
                     <td className="p-4 text-center">
                       <div className="flex justify-center gap-3">
                         <button onClick={() => handlePrintAction(item)} title="Reprint" className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors shadow-sm"><Printer size={18} /></button>
+                         <>
+                           <button onClick={() => handleRefundBill(item.id!)} title="Refund Bill" className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors shadow-sm"><RotateCcw size={18} /></button>
+                           <button onClick={() => handleCancelBill(item.id!)} title="Cancel Bill" className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors shadow-sm"><Trash2 size={18} /></button>
+                         </>
                       </div>
                     </td>
                   </tr>
@@ -429,6 +434,7 @@ const PrintedBills: React.FC = () => {
           </table>
         </div>
       </div>
+      <ConfirmationDialog />
     </motion.div>
   );
 };

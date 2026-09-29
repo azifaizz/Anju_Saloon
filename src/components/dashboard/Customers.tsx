@@ -78,11 +78,11 @@ const PaymentModal = ({ customerId, customerName, bill, onClose, onPaymentRecord
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 shadow-sm">
                             <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Total Bill</p>
-                            <p className="text-lg font-bold text-slate-800 font-mono">₹{bill.amount.toLocaleString()}</p>
+                            <p className="text-base font-bold text-slate-800 font-mono">₹{bill.amount.toLocaleString()}</p>
                         </div>
                         <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 shadow-sm">
                             <p className="text-[10px] text-rose-500 uppercase font-bold tracking-wider">Outstanding</p>
-                            <p className="text-lg font-bold text-rose-700 font-mono">₹{bill.balance.toLocaleString()}</p>
+                            <p className="text-base font-bold text-rose-700 font-mono">₹{bill.balance.toLocaleString()}</p>
                         </div>
                     </div>
 
@@ -92,7 +92,7 @@ const PaymentModal = ({ customerId, customerName, bill, onClose, onPaymentRecord
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
                             <input
                                 type="number"
-                                className="w-full border-2 border-slate-100 bg-slate-50/50 rounded-xl pl-8 pr-4 py-3 focus:bg-white focus:border-blue-500 focus:ring-0 outline-none transition-all font-bold text-lg"
+                                className="w-full border-2 border-slate-100 bg-slate-50/50 rounded-xl pl-8 pr-4 py-3 focus:bg-white focus:border-blue-500 focus:ring-0 outline-none transition-all font-bold text-base"
                                 value={amount || ''}
                                 autoFocus
                                 placeholder="0.00"
@@ -367,7 +367,17 @@ const Customers = () => {
     const saveCustomerLogic = async (customer: any) => {
         setIsSaving(true);
         try {
-            const payload = { name: customer.name, phone: customer.phone, address: customer.address, gstin: customer.gstNo || customer.gstin, email: customer.email };
+            const payload = { 
+                name: customer.name, 
+                phone: customer.phone, 
+                address: customer.address, 
+                gstin: customer.gstNo || customer.gstin, 
+                email: customer.email,
+                dob: customer.dob,
+                anniversary: customer.anniversary,
+                preferredStaff: customer.preferredStaff,
+                notes: customer.notes
+            };
             if (customer.id) {
                 await customerApi.update(customer.id, payload);
                 toast.success('Updated!');
@@ -501,7 +511,14 @@ const Customers = () => {
                                 <div className="flex items-center gap-2"><Mail size={16} className="text-green-600" /> <span className="text-sm truncate">{selectedCustomer.email || 'N/A'}</span></div>
                                 <div className="flex items-center gap-2"><FileText size={16} className="text-purple-600" /> <span className="text-sm">{selectedCustomer.gstin || 'N/A'}</span></div>
                                 <div className="flex items-center gap-2"><MapPin size={16} className="text-orange-600" /> <span className="text-sm truncate">{selectedCustomer.address || 'N/A'}</span></div>
+                                {selectedCustomer.dob && <div className="flex items-center gap-2"><Clock size={16} className="text-pink-600" /> <span className="text-sm">DOB: {new Date(selectedCustomer.dob).toLocaleDateString()}</span></div>}
+                                {selectedCustomer.anniversary && <div className="flex items-center gap-2"><Clock size={16} className="text-red-500" /> <span className="text-sm">Anniv: {new Date(selectedCustomer.anniversary).toLocaleDateString()}</span></div>}
                             </div>
+                            {selectedCustomer.notes && (
+                                <div className="mt-4 p-3 bg-amber-50 rounded border border-amber-100 text-sm text-amber-800 whitespace-pre-wrap">
+                                    <strong>Notes:</strong> {selectedCustomer.notes}
+                                </div>
+                            )}
                         </div>
 
                         {highlightBillId && (() => {
@@ -518,7 +535,7 @@ const Customers = () => {
                                             <p className="text-sm text-amber-700">Balance: ₹{((bill.finalAmount || 0) - (bill.amountPaid || 0)).toLocaleString()} • Due by {deadlineDate.toLocaleDateString()}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => { setBillToPay({ id: bill.id, amount: bill.finalAmount, balance: (bill.finalAmount || 0) - (bill.amountPaid || 0), status: bill.status, paymentHistory: bill.paymentHistory } as any); setIsPayModalOpen(true); }} className="px-4 py-2 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 shadow-sm">Pay Now</button>
+                                    <button onClick={() => { setBillToPay({ id: bill.id, amount: bill.finalAmount, balance: (bill.finalAmount || 0) - (bill.amountPaid || 0), status: bill.status, paymentHistory: bill.paymentHistory } as any); setIsPayModalOpen(true); }} className="px-3 py-1.5 text-sm bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 shadow-sm">Pay Now</button>
                                 </div>
                             );
                         })()}
@@ -526,23 +543,27 @@ const Customers = () => {
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-600">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Bill Total</p>
-                                <p className="text-lg font-black text-blue-700 mt-1">₹{totalSpent.toLocaleString()}</p>
+                                <p className="text-base font-black text-blue-700 mt-1">₹{totalSpent.toLocaleString()}</p>
                             </div>
                             <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-green-500">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Paid</p>
-                                <p className="text-lg font-black text-green-700 mt-1">₹{totalPaid.toLocaleString()}</p>
+                                <p className="text-base font-black text-green-700 mt-1">₹{totalPaid.toLocaleString()}</p>
                             </div>
                             <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-red-500">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pending</p>
-                                <p className="text-lg font-black text-red-700 mt-1">₹{pendingBalance.toLocaleString()}</p>
+                                <p className="text-base font-black text-red-700 mt-1">₹{pendingBalance.toLocaleString()}</p>
                             </div>
                             <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-emerald-500">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Visits</p>
-                                <p className="text-lg font-black text-emerald-700 mt-1">{visitCount}</p>
+                                <p className="text-base font-black text-emerald-700 mt-1">{visitCount}</p>
                             </div>
                             <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-orange-500">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Last Visit</p>
-                                <p className="text-lg font-black text-orange-700 mt-1">{lastVisit}</p>
+                                <p className="text-base font-black text-orange-700 mt-1">{lastVisit}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-purple-500">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Loyalty Pts</p>
+                                <p className="text-base font-black text-purple-700 mt-1">{selectedCustomer.loyaltyPoints || 0}</p>
                             </div>
                         </div>
 
@@ -592,7 +613,7 @@ const Customers = () => {
                 ) : (
                     <div className="flex-grow flex flex-col items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                         <Users size={64} className="text-gray-200 mb-4" />
-                        <h3 className="text-lg font-bold text-gray-400 uppercase tracking-widest">Select a customer</h3>
+                        <h3 className="text-base font-bold text-gray-400 uppercase tracking-widest">Select a customer</h3>
                     </div>
                 )}
             </div>
@@ -605,10 +626,21 @@ const Customers = () => {
 };
 
 const CustomerFormModal = ({ customer, onSave, onClose, isSaving }: { customer: Customer | null; onSave: any; onClose: () => void; isSaving?: boolean }) => {
-    const [form, setForm] = useState({ name: customer?.name || '', phone: customer?.phone || '', gstNo: customer?.gstin || '', address: customer?.address || '', email: customer?.email || '' });
+    const { staff } = useGlobalData();
+    const [form, setForm] = useState({ 
+        name: customer?.name || '', 
+        phone: customer?.phone || '', 
+        gstNo: customer?.gstin || '', 
+        address: customer?.address || '', 
+        email: customer?.email || '',
+        dob: customer?.dob || '',
+        anniversary: customer?.anniversary || '',
+        preferredStaff: customer?.preferredStaff || '',
+        notes: customer?.notes || ''
+    });
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md border">
+            <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-xl border max-h-[90vh] overflow-y-auto custom-scrollbar">
                 <div className="flex justify-between items-center mb-8 border-b pb-4">
                     <h2 className="text-2xl font-black text-gray-900 tracking-tight">{customer ? 'Edit Profile' : 'New Customer'}</h2>
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X size={20} /></button>
@@ -628,7 +660,30 @@ const CustomerFormModal = ({ customer, onSave, onClose, isSaving }: { customer: 
                     </div>
                     <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Address</label>
-                        <textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Full address" className="w-full p-3 bg-gray-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 resize-none" rows={3} />
+                        <textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Full address" className="w-full p-3 bg-gray-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 resize-none" rows={2} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Date of Birth</label>
+                            <input type="date" value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} className="w-full p-3 bg-gray-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 text-gray-600" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Anniversary</label>
+                            <input type="date" value={form.anniversary} onChange={e => setForm({ ...form, anniversary: e.target.value })} className="w-full p-3 bg-gray-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 text-gray-600" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Preferred Staff</label>
+                        <select value={form.preferredStaff} onChange={e => setForm({ ...form, preferredStaff: e.target.value })} className="w-full p-3 bg-gray-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 text-gray-600">
+                            <option value="">No Preference</option>
+                            {staff.filter((s: any) => s.isActive !== false).map((s: any) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Notes</label>
+                        <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Customer preferences, allergies, etc." className="w-full p-3 bg-gray-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 resize-none" rows={2} />
                     </div>
                 </div>
                 <div className="flex gap-4 mt-10">

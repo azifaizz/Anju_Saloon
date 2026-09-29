@@ -265,17 +265,17 @@ const CashierReports = () => {
       <header className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-800">Sales Report</h1>
         <div className="flex gap-3">
-          <button onClick={() => { setShowCancelledModal(true); fetchCancelledReportsOnly(); }} className="px-5 py-2.5 bg-red-600 text-white rounded-lg flex items-center gap-2 hover:bg-red-700">
+          <button onClick={() => { setShowCancelledModal(true); fetchCancelledReportsOnly(); }} className="px-3 py-1.5 text-sm text-sm bg-red-600 text-white rounded-lg flex items-center gap-2 hover:bg-red-700">
             <Filter size={18} /> View Cancelled
           </button>
-          <button onClick={exportExcel} className="px-5 py-2.5 bg-green-600 text-white rounded-lg flex items-center gap-2 hover:bg-green-700">
+          <button onClick={exportExcel} className="px-3 py-1.5 text-sm text-sm bg-green-600 text-white rounded-lg flex items-center gap-2 hover:bg-green-700">
             <Download size={18} /> Export to Excel
           </button>
         </div>
       </header>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-lg font-semibold text-blue-800">
+        <p className="text-base font-semibold text-blue-800">
           Total Paid Bills: <span className="font-bold text-xl">{totalBills}</span>
         </p>
       </div>
@@ -349,7 +349,7 @@ const CashierReports = () => {
                 <div className="text-center py-20 text-gray-400">Loading cancelled records...</div>
               ) : cancelledBills.length === 0 ? (
                 <div className="text-center py-20">
-                  <p className="text-gray-400 text-lg">No cancelled bills found for the selected range.</p>
+                  <p className="text-gray-400 text-base">No cancelled bills found for the selected range.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -357,7 +357,7 @@ const CashierReports = () => {
                     <div key={b.id || Math.random().toString()} className="border border-red-100 rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition">
                       <div className="flex justify-between items-start mb-3 border-b border-red-50 pb-2">
                         <div>
-                          <p className="font-bold text-red-800 text-lg">#{b.id || "N/A"}</p>
+                          <p className="font-bold text-red-800 text-base">#{b.id || "N/A"}</p>
                           <p className="text-xs text-gray-500">{parseDateSafe(b.createdAt)?.toLocaleString('en-GB')}</p>
                         </div>
                         <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-1 rounded uppercase">{(b.status || b.paymentMethod || 'CANCELLED').toUpperCase()}</span>

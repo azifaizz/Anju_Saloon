@@ -71,10 +71,10 @@ const BillView = () => {
         <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center">
             {/* Action Buttons */}
             <div className="mb-6 flex gap-4 no-print sticky top-4 z-10">
-                <button onClick={handleDownloadPdf} className="bg-blue-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-lg font-semibold transition-all">
+                <button onClick={handleDownloadPdf} className="bg-blue-600 text-white px-3 py-1.5 text-sm text-sm rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-lg font-semibold transition-all">
                     <Download size={20} /> Download PDF
                 </button>
-                <button onClick={() => handlePrint()} className="bg-gray-800 text-white px-6 py-3 rounded-lg flex items-center gap-2 hover:bg-gray-900 shadow-lg font-semibold transition-all">
+                <button onClick={() => handlePrint()} className="bg-gray-800 text-white px-3 py-1.5 text-sm text-sm rounded-lg flex items-center gap-2 hover:bg-gray-900 shadow-lg font-semibold transition-all">
                     <Printer size={20} /> Print Thermal
                 </button>
             </div>

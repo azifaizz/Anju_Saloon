@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Loader2, Printer, Ban, Clock, CheckCircle, Download } from 'lucide-react';
+import { FileText, Loader2, Printer, Ban, Clock, CheckCircle, Download, Banknote } from 'lucide-react';
 import * as XLSX from 'xlsx';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -113,13 +113,19 @@ const StaffSalaryView = () => {
             }
 
             // Fetch Commissions separate state for context
+            let fetchedCommissions: any[] = [];
             try {
                 const commRes = await staffApi.getStaffCommissions(selectedStaffId, selectedMonth);
-                setCommissions(commRes.data || []);
+                fetchedCommissions = commRes.data || [];
+                setCommissions(fetchedCommissions);
             } catch (e) {
                 console.warn("Failed to fetch commission details", e);
                 setCommissions([]);
             }
+
+            const totalCommissions = fetchedCommissions.reduce((acc: number, c: any) => acc + (c.staffCommissionAmount || c.amount || 0), 0);
+            (slip as any).totalCommissions = totalCommissions;
+            slip.netSalary = slip.baseSalary - (slip.lopAmount + (slip.permissionDeduction || 0)) + totalCommissions;
 
             setSalarySlip(slip);
             toast.success("Salary slip generated");
@@ -208,6 +214,28 @@ const StaffSalaryView = () => {
         }
     };
 
+    const handleProcessPayout = async () => {
+        if (!salarySlip || commissions.length === 0) {
+            toast.error("No commissions to payout.");
+            return;
+        }
+        
+        try {
+            setLoading(true);
+            const unpaidComms = commissions.filter(c => c.status !== 'PAID');
+            for (const comm of unpaidComms) {
+                await staffApi.payCommission(comm.id || comm._id, 'CASH');
+            }
+            toast.success("Payout processed successfully. Commissions marked as PAID.");
+            handleGenerateSlip(); // Refresh
+        } catch (error) {
+            console.error("Payout error", error);
+            toast.error("Failed to process payout");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Bulk Report State
     const [bulkReport, setBulkReport] = useState<SalarySlip[]>([]);
     const [commissions, setCommissions] = useState<any[]>([]);
@@ -241,8 +269,8 @@ const StaffSalaryView = () => {
             {/* --- Controls Section --- */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 print:hidden flex flex-wrap gap-4 items-end">
                 <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button onClick={() => setViewMode('individual')} className={`px-4 py-2 rounded-md transition-all ${viewMode === 'individual' ? 'bg-white shadow text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}>Individual Slip</button>
-                    <button onClick={() => setViewMode('bulk')} className={`px-4 py-2 rounded-md transition-all ${viewMode === 'bulk' ? 'bg-white shadow text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}>Bulk Report</button>
+                    <button onClick={() => setViewMode('individual')} className={`px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === 'individual' ? 'bg-white shadow text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}>Individual Slip</button>
+                    <button onClick={() => setViewMode('bulk')} className={`px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === 'bulk' ? 'bg-white shadow text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}>Bulk Report</button>
                 </div>
 
                 <div className="flex-1 min-w-[200px]">
@@ -282,18 +310,27 @@ const StaffSalaryView = () => {
                     </button>
 
                     {(salarySlip && viewMode === 'individual') && (
-                        <button
-                            onClick={handleDownloadPDF}
-                            className="bg-purple-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2"
-                        >
-                            <Printer size={20} /> Print
-                        </button>
+                        <>
+                            <button
+                                onClick={handleProcessPayout}
+                                disabled={loading || !commissions.some(c => c.status !== 'PAID')}
+                                className="bg-emerald-600 text-white px-3 py-1.5 text-sm.5 rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <Banknote size={20} /> Process Payout
+                            </button>
+                            <button
+                                onClick={handleDownloadPDF}
+                                className="bg-purple-600 text-white px-3 py-1.5 text-sm.5 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2"
+                            >
+                                <Printer size={20} /> Print
+                            </button>
+                        </>
                     )}
 
                     {(viewMode === 'bulk' && bulkReport.length > 0) && (
                         <button
                             onClick={handleExportExcel}
-                            className="bg-green-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-green-700 flex items-center gap-2"
+                            className="bg-green-600 text-white px-3 py-1.5 text-sm.5 rounded-lg font-medium hover:bg-green-700 flex items-center gap-2"
                         >
                             <Download size={20} /> Export to Excel
                         </button>
@@ -337,7 +374,7 @@ const StaffSalaryView = () => {
 
                                 {/* Attendance Summary */}
                                 <div className="mb-8">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                    <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
                                         <Clock size={20} className="text-blue-600" /> Attendance Summary
                                     </h3>
                                     <div className="grid grid-cols-4 gap-4 text-center">
@@ -367,7 +404,7 @@ const StaffSalaryView = () => {
 
                                 {/* Deductions Table */}
                                 <div className="mb-8">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                    <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
                                         <Ban size={20} className="text-red-600" /> Deductions
                                     </h3>
                                     <table className="w-full text-left text-sm border-collapse">
@@ -401,6 +438,10 @@ const StaffSalaryView = () => {
                                             <tr className="bg-slate-50 font-bold">
                                                 <td className="p-3 text-slate-800" colSpan={3}>Total Deductions</td>
                                                 <td className="p-3 text-right text-red-700">- ₹{((salarySlip.lopAmount || 0) + (salarySlip.permissionDeduction || 0)).toFixed(2)}</td>
+                                            </tr>
+                                            <tr className="bg-green-50/50 border-t border-slate-200 font-bold">
+                                                <td className="p-3 text-slate-800" colSpan={3}>Commissions Earned</td>
+                                                <td className="p-3 text-right text-green-700">+ ₹{((salarySlip as any).totalCommissions || 0).toFixed(2)}</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -437,6 +478,7 @@ const StaffSalaryView = () => {
                                                     <th className="p-3">Bill ID</th>
                                                     <th className="p-3 text-right">Sale Amount (₹)</th>
                                                     <th className="p-3 text-right">Commission Earned</th>
+                                                    <th className="p-3 text-center">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
@@ -446,6 +488,11 @@ const StaffSalaryView = () => {
                                                         <td className="p-3 text-gray-600 font-mono text-xs">{comm.invoiceNumber || comm.billId || comm.id}</td>
                                                         <td className="p-3 text-right text-gray-600">₹{(comm.finalAmount || 0).toLocaleString()}</td>
                                                         <td className="p-3 text-right font-bold text-green-600">₹{(comm.staffCommissionAmount || comm.amount || 0).toLocaleString()}</td>
+                                                        <td className="p-3 text-center">
+                                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${comm.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                                {comm.status || 'UNPAID'}
+                                                            </span>
+                                                        </td>
                                                     </tr>
                                                 ))}
                                                 <tr className="bg-green-50 font-bold">

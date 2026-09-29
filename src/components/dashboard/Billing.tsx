@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { billingApi, productApi, customerApi, estimationApi, appointmentApi, Appointment, staffApi } from "@/lib/api";
+import { billingApi, productApi, customerApi, estimationApi, appointmentApi, Appointment, staffApi, packageApi, customerPackageApi } from "@/lib/api";
 import { numberToWords } from "@/utils/numberToWords";
 import { useGlobalData } from "@/context/GlobalDataContext";
 import { useCachedResource } from '@/hooks/useCachedResource';
@@ -29,6 +29,7 @@ import {
   Calendar
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useLocation } from "react-router-dom";
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 // import { db } from "@/lib/firebase"; // Removed
 // import { doc, getDoc } from "firebase/firestore"; // Removed
@@ -59,8 +60,11 @@ interface Product {
 }
 
 interface BillItem extends Product {
-  type?: 'PRODUCT' | 'SERVICE';
+  type?: 'PRODUCT' | 'SERVICE' | 'PACKAGE';
   serviceId?: string;
+  packageId?: string;
+  isRedeemed?: boolean;
+  customerPackageId?: string;
   staffId?: string;
   staffName?: string;
   qty: number | string;
@@ -73,7 +77,7 @@ interface BillItem extends Product {
   purchaseRate?: number;
   RetailSellingPrice?: number;
   sellingPrice?: number;
-  systemType?: "Retail" | "Wholesale";
+  systemType?: "Retail" | "SERVICE" | "PACKAGE";
   commissionType?: 'PERCENTAGE' | 'FIXED';
   commissionValue?: number;
   staffCommissionAmount?: number;
@@ -103,7 +107,7 @@ const ReturnModal = ({ onFind, onClose }: { onFind: (invoiceId: string) => void;
             }}
             className="form-input flex-grow"
           />
-          <button onClick={handleFindClick} className="px-4 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600">Find</button>
+          <button onClick={handleFindClick} className="px-3 py-1.5 text-sm bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600">Find</button>
         </div>
       </motion.div>
     </div>
@@ -127,7 +131,7 @@ const standardizeProduct = (p: any) => {
     inventoryTracking: p.inventoryTracking || 'NOT_TRACKED',
     gst: Number(p.gst || p.GST || p.gstPercent || 0),
     imageUrl: p.imageUrl || "",
-    systemType: "Retail"
+    systemType: p.systemType || "Retail"
   };
 };
 
@@ -151,35 +155,7 @@ const computeItem = (item: BillItem): BillItem => {
   };
 };
 
-const EstimationModal = ({ onFind, onClose }: { onFind: (invoiceId: string) => void; onClose: () => void; }) => {
-  const [invoiceId, setInvoiceId] = useState("");
-  const handleFindClick = () => { if (invoiceId.trim()) { onFind(invoiceId.trim()); } };
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <motion.div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Load Estimation</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><X /></button>
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Enter Invoice Number..."
-            value={invoiceId}
-            onChange={(e) => setInvoiceId(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleFindClick();
-              }
-            }}
-            className="form-input flex-grow border px-3 py-2 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
-          <button onClick={handleFindClick} className="px-4 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 transition-colors">Load</button>
-        </div>
-      </motion.div>
-    </div>
-  );
-};
+
 
 const buildPayloadFromUIItems = (
   uiItems: BillItem[],
@@ -198,7 +174,10 @@ const buildPayloadFromUIItems = (
   enableExpiryReminder?: boolean,
   expiryDays?: string | number,
   customerId?: string | null,
-  taxType: "INTRA_STATE" | "INTER_STATE" = "INTRA_STATE"
+  taxType: "INTRA_STATE" | "INTER_STATE" = "INTRA_STATE",
+  loyaltyDiscount: number = 0,
+  loyaltyPointsRedeemed: number = 0,
+  loyaltyPointsEarned: number = 0
 ) => {
   const items = uiItems.map((ui) => {
     const unitPrice = Number(ui.price || 0);
@@ -223,10 +202,11 @@ const buildPayloadFromUIItems = (
 
     return {
       type: ui.type || "PRODUCT",
-      productId: ui.type === "SERVICE" ? undefined : productId,
-      serviceId: ui.type === "SERVICE" ? productId : undefined,
-      staffId: ui.staffId,
-      staffName: ui.staffName,
+      productId: ui.type === "PRODUCT" ? productId : "",
+      serviceId: ui.type === "SERVICE" ? productId : "",
+      packageId: ui.type === "PACKAGE" ? productId : "",
+      staffId: ui.staffId || "",
+      staffName: ui.staffName || "",
       productName: ui.name || "",
       quantity: Number(qty) || 0,
       unitPrice: Number(unitPrice) || 0,
@@ -245,8 +225,10 @@ const buildPayloadFromUIItems = (
       finalAmount: netAmount,
       netAmount,
       imageUrl: ui.imageUrl || "",
-      commissionType: ui.commissionType,
-      commissionValue: ui.commissionValue,
+      isRedeemed: ui.isRedeemed || false,
+      customerPackageId: ui.customerPackageId || "",
+      commissionType: ui.commissionType || "",
+      commissionValue: ui.commissionValue || 0,
       staffCommissionAmount: ui.type === 'SERVICE' && ui.staffId 
         ? round2(ui.commissionType === 'FIXED' ? (ui.commissionValue || 0) * Number(qty) : (netAmount * (ui.commissionValue || 0) / 100))
         : 0
@@ -258,7 +240,12 @@ const buildPayloadFromUIItems = (
   const cgstAmountTotal = round2(items.reduce((s, it) => s + (it as any).cgstAmount || 0, 0));
   const sgstAmountTotal = round2(items.reduce((s, it) => s + (it as any).sgstAmount || 0, 0));
   const igstAmountTotal = round2(items.reduce((s, it) => s + (it as any).igstAmount || 0, 0));
-  const finalAmount = round2(items.reduce((s, it) => s + it.netAmount, 0));
+  let finalAmount = round2(items.reduce((s, it) => s + it.netAmount, 0));
+  
+  // Apply Loyalty Discount
+  if (loyaltyDiscount > 0) {
+    finalAmount = round2(Math.max(0, finalAmount - loyaltyDiscount));
+  }
 
   const receivedAmount = parseFloat(receivedAmountRaw || "") || 0;
   let amountPaid = (paymentMethod === 'Cash' && receivedAmount >= finalAmount)
@@ -295,8 +282,8 @@ const buildPayloadFromUIItems = (
     paymentMethod: paymentMethod === 'Split Payment' ? 'CASH + UPI' : paymentMethod,
     amountPaid: Number(round2(amountPaid)),
     pendingAmount: Number(round2(pendingAmount)),
-    cashAmount: paymentMethod === 'Split Payment' ? Number(round2(cashPaid)) : undefined,
-    onlineAmount: paymentMethod === 'Split Payment' ? Number(round2(onlinePaid)) : undefined,
+    cashAmount: paymentMethod === 'Split Payment' ? Number(round2(cashPaid)) : 0,
+    onlineAmount: paymentMethod === 'Split Payment' ? Number(round2(onlinePaid)) : 0,
     items,
     totalDiscountAmount,
     totalGstAmount,
@@ -308,8 +295,11 @@ const buildPayloadFromUIItems = (
     enableExpiryReminder: !!enableExpiryReminder,
     expiryDays: (expiryDays !== undefined && expiryDays !== null && expiryDays !== "") ? Number(expiryDays) : 30,
     customerId: customerId || "",
-    billType: (systemType?.toUpperCase() === "Retail" ? "Retail" : "RETAIL"),
-    systemType: (systemType || "Retail")
+    billType: "RETAIL",
+    systemType: "Retail",
+    loyaltyDiscount,
+    loyaltyPointsRedeemed,
+    loyaltyPointsEarned
   };
 };
 
@@ -344,7 +334,7 @@ const ProductSelectionModal = ({ products, onSelect, onClose }: { products: any[
                   </td>
                   <td className="p-3">{product.name}</td>
                   <td className="p-3">₹{product.price}</td>
-                  <td className="p-3">{product.inventoryTracking === 'NOT_TRACKED' ? 'Available' : product.stockQuantity}</td>
+                  <td className="p-3">{product.inventoryTracking === 'NOT_TRACKED' ? 'Unlimited' : product.stockQuantity}</td>
                   <td className="p-3">
                     <button
                       onClick={() => onSelect(product)}
@@ -377,7 +367,7 @@ const AppointmentModal = ({ appointments, onSelect, onClose }: { appointments: A
         <div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white">
           <div className="flex items-center gap-2">
             <Calendar size={20} />
-            <h2 className="text-lg font-bold">Select Today's Appointment</h2>
+            <h2 className="text-base font-bold">Select Today's Appointment</h2>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"><X size={20} /></button>
         </div>
@@ -415,6 +405,8 @@ const AppointmentModal = ({ appointments, onSelect, onClose }: { appointments: A
 const Billing: React.FC = () => {
   const {
     products: globalProducts,
+    salonServices,
+    packages,
     appointments,
     refreshAppointments,
 
@@ -426,6 +418,8 @@ const Billing: React.FC = () => {
     loading: globalLoading,
     isSyncing: globalSyncing,
     refreshProducts,
+    refreshSalonServices,
+    refreshPackages,
 
     refreshCustomers,
     refreshBills,
@@ -457,6 +451,17 @@ const Billing: React.FC = () => {
   const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
 
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customerPackages, setCustomerPackages] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (customerId) {
+      customerPackageApi.getByCustomer(customerId).then(res => {
+        if (res.data) setCustomerPackages(res.data);
+      }).catch(console.error);
+    } else {
+      setCustomerPackages([]);
+    }
+  }, [customerId]);
 
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -466,8 +471,45 @@ const Billing: React.FC = () => {
   const [originalInvoiceId, setOriginalInvoiceId] = useState<string>("");
   const [originalTotal, setOriginalTotal] = useState(0);
   const [customerMode, setCustomerMode] = useState("Walk-in");
-  const [documentMode, setDocumentMode] = useState<"Billing" | "Estimation">("Billing");
-  const [isEstimationModalOpen, setIsEstimationModalOpen] = useState(false);
+  const documentMode = "Billing";
+  const setDocumentMode = (m: string) => {};
+
+  
+  const location = useLocation();
+
+  // Handle appointment state passed via navigation
+  useEffect(() => {
+    if (location.state?.appointment && salonServices.length > 0) {
+      const apt = location.state.appointment;
+      setCustomerName(apt.customerName || "");
+      setCustomerPhone(apt.customerPhone || "");
+      
+      const newItems: BillItem[] = [];
+      apt.serviceIds.forEach((serviceId: string) => {
+        const service = salonServices.find(s => s.id === serviceId);
+        if (service) {
+          const item = standardizeProduct(service);
+          newItems.push(computeItem({
+            ...item,
+            type: 'SERVICE',
+            qty: 1,
+            Discount: 0,
+            staffId: apt.staffId || ""
+          } as any));
+        }
+      });
+      
+      if (newItems.length > 0) {
+        setItems(newItems);
+      }
+      
+      setSelectedAppointmentId(apt.id || null);
+      
+      // Clear state so it doesn't re-trigger on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, salonServices]);
+
   const [activeBillId, setActiveBillId] = useState<string | null>(null);
   const [isHoldLoaded, setIsHoldLoaded] = useState(false);
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
@@ -485,6 +527,12 @@ const Billing: React.FC = () => {
   const [shopName] = useLocalStorage('shopName_rose_boutique', 'Anjus Beauty Saloon');
   const [gstNumberRaw] = useLocalStorage('gstNumber_v2', '33HFVPS1108J1Z0');
   const [defaultGst] = useLocalStorage('defaultGst', '0');
+
+  // Loyalty Settings
+  const [loyaltyEnabled] = useLocalStorage('loyaltyEnabled', false);
+  const [loyaltySpendRatio] = useLocalStorage('loyaltySpendRatio', 100);
+  const [loyaltyRedeemValue] = useLocalStorage('loyaltyRedeemValue', 1);
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
 
   const gstNumber =
     !gstNumberRaw || gstNumberRaw === 'YOUR_GST_NUMBER_HERE'
@@ -509,7 +557,8 @@ const Billing: React.FC = () => {
     refreshBills();
     refreshHolds();
     refreshProducts();
-
+    if (refreshSalonServices) refreshSalonServices();
+    if (refreshPackages) refreshPackages();
   }, []);
 
   // Recalculate prices when switching between Retail and Retail
@@ -612,9 +661,13 @@ const Billing: React.FC = () => {
     if (val.trim()) {
       const normalizeId = (id: any) => id ? id.toString().replace(/^0+/, '') : '';
       const normalizedInput = normalizeId(val);
-      const allProducts = [...globalProducts];
+      const allSearchableItems = [
+        ...globalProducts,
+        ...salonServices.map(s => ({ ...s, systemType: 'SERVICE', price: s.price })),
+        ...packages.map(p => ({ ...p, systemType: 'PACKAGE', price: p.price }))
+      ];
 
-      const matches = allProducts
+      const matches = allSearchableItems
         .filter(p =>
           (p.barcode && normalizeId(p.barcode) === normalizedInput) ||
           (p.id && normalizeId(p.id) === normalizedInput) ||
@@ -659,14 +712,32 @@ const Billing: React.FC = () => {
     setCustomerName(val);
 
     if (val.trim()) {
+      const cleanVal = val.replace(/\D/g, '');
       const matches = globalCustomers.filter(c =>
         c.name.toLowerCase().includes(val.toLowerCase()) ||
-        (c.phone && c.phone.includes(val))
-      );
+        (c.phone && c.phone.includes(val)) ||
+        (cleanVal.length >= 3 && (c.phone || '').replace(/\D/g, '').includes(cleanVal))
+      ).slice(0, 10);
       setCustomerSuggestions(matches);
     } else {
       setCustomerSuggestions([]);
+      if (customerId && !customerPhone) setCustomerId(null);
     }
+  };
+
+  const handleCustomerNameBlur = () => {
+    setTimeout(() => {
+      setCustomerSuggestions([]);
+      if (!customerId && customerName && customerName.trim().length > 1) {
+        const match = globalCustomers.find(c =>
+          c.name.trim().toLowerCase() === customerName.trim().toLowerCase()
+        );
+        if (match) {
+          selectCustomer(match);
+          toast.success(`Existing customer loaded: ${match.name}`, { id: 'cust-match' });
+        }
+      }
+    }, 250);
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -674,13 +745,49 @@ const Billing: React.FC = () => {
     setCustomerPhone(val);
 
     if (val.trim()) {
-      const matches = globalCustomers.filter(c =>
-        c.phone && c.phone.includes(val)
-      );
+      const cleanVal = val.replace(/\D/g, '');
+      const matches = globalCustomers.filter(c => {
+        const cPhone = (c.phone || '').toString().replace(/\D/g, '');
+        return (c.phone && c.phone.includes(val)) ||
+               (cleanVal.length >= 2 && cPhone.includes(cleanVal)) ||
+               c.name.toLowerCase().includes(val.toLowerCase());
+      }).slice(0, 10);
       setPhoneSuggestions(matches);
+
+      // Auto-fetch existing customer if exact 10 digits entered
+      if (cleanVal.length >= 10) {
+        const exact = globalCustomers.find(c => {
+          const cPhone = (c.phone || '').toString().replace(/\D/g, '');
+          return cPhone === cleanVal || (cPhone.length >= 10 && cPhone.slice(-10) === cleanVal.slice(-10));
+        });
+        if (exact) {
+          selectCustomer(exact);
+          toast.success(`Existing customer loaded: ${exact.name}`, { id: 'cust-match' });
+        }
+      }
     } else {
       setPhoneSuggestions([]);
+      if (customerId && !customerName) setCustomerId(null);
     }
+  };
+
+  const handlePhoneBlur = () => {
+    setTimeout(() => {
+      setPhoneSuggestions([]);
+      if (!customerId && customerPhone) {
+        const cleanVal = customerPhone.replace(/\D/g, '');
+        if (cleanVal.length >= 7) {
+          const match = globalCustomers.find(c => {
+            const cp = (c.phone || '').toString().replace(/\D/g, '');
+            return cp === cleanVal || (cp.length >= 10 && cleanVal.length >= 10 && cp.slice(-10) === cleanVal.slice(-10));
+          });
+          if (match) {
+            selectCustomer(match);
+            toast.success(`Existing customer loaded: ${match.name}`, { id: 'cust-match' });
+          }
+        }
+      }
+    }, 250);
   };
 
   const selectCustomer = (customer: any) => {
@@ -690,6 +797,7 @@ const Billing: React.FC = () => {
     setCustomerAddress(customer.address || customer.location || customer.Address || "");
     setCustomerGst(customer.gstin || customer.gst || "");
     setCustomerId(customer.id);
+    setLoyaltyPointsToRedeem(0);
     setCustomerSuggestions([]);
     setPhoneSuggestions([]);
   };
@@ -826,8 +934,11 @@ const Billing: React.FC = () => {
     console.log('[BILLING DEBUG] handleAddProduct called. barcode:', JSON.stringify(barcode));
     console.log('[BILLING DEBUG] globalProducts count:', globalProducts?.length, 'first:', globalProducts?.[0]);
     if (!barcode || barcode.trim() === "") {
-      const allProducts = [...globalProducts];
-      const availableProducts = allProducts.filter(p => (p.availabilityStatus || 'AVAILABLE') === 'AVAILABLE');
+      const allProducts = [
+        ...globalProducts.map(p => ({ ...p, type: 'PRODUCT' })),
+        ...salonServices.map(s => ({ ...standardizeProduct(s), type: 'SERVICE' }))
+      ];
+      const availableProducts = allProducts.filter(p => (p.availabilityStatus || 'AVAILABLE') === 'AVAILABLE' || p.type === 'SERVICE');
       setSearchResults(availableProducts);
       setIsSelectionModalOpen(true);
       return;
@@ -861,7 +972,8 @@ const Billing: React.FC = () => {
             qty: 1,
             total: calculateItemTotal(product.price, 1, 0, Number(defaultGst) || 0),
             purchaseRate: product.purchaseRate || 0,
-            systemType: "Retail",
+            type: product.type || "PRODUCT",
+            systemType: product.systemType || "Retail",
             imageUrl: product.imageUrl || ""
           };
           return [...prev, newItem];
@@ -875,8 +987,11 @@ const Billing: React.FC = () => {
     const normalizeId = (id: any) => id ? id.toString().trim() : '';
     const normalizedInput = processedBarcode;
 
-    const allProducts = [...globalProducts];
-    const availableProducts = allProducts.filter(p => (p.availabilityStatus || 'AVAILABLE') === 'AVAILABLE');
+    const allProducts = [
+      ...globalProducts.map(p => ({ ...p, type: 'PRODUCT' })),
+      ...salonServices.map(s => ({ ...standardizeProduct(s), type: 'SERVICE' }))
+    ];
+    const availableProducts = allProducts.filter(p => (p.availabilityStatus || 'AVAILABLE') === 'AVAILABLE' || p.type === 'SERVICE');
     const matches = availableProducts.filter(p =>
       (p.barcode && normalizeId(p.barcode) === normalizedInput) ||
       (p.id && normalizeId(p.id) === normalizedInput) ||
@@ -955,6 +1070,36 @@ const Billing: React.FC = () => {
       }
       return [...prev, newItem];
     });
+  };
+
+  const handleRedeemPackageService = (pkg: any, itemIndex: number) => {
+    const serviceItem = pkg.items[itemIndex];
+    if (serviceItem.usedQuantity >= serviceItem.totalQuantity) {
+      toast.error("This service has been fully used in this package.");
+      return;
+    }
+    
+    const newItem: BillItem = {
+      id: `redeem-${pkg.id}-${serviceItem.serviceId}-${Date.now()}`,
+      barcode: `PKG-${(pkg.packageName || '').substring(0,3).toUpperCase()}`,
+      name: `(Redeemed) ${serviceItem.serviceName}`,
+      price: 0,
+      RetailSellingPrice: 0,
+      GST: 0,
+      Discount: 0,
+      quantity: 1,
+      qty: 1,
+      total: 0,
+      systemType: p.systemType || "Retail",
+      type: "SERVICE",
+      serviceId: serviceItem.serviceId,
+      isRedeemed: true,
+      customerPackageId: pkg.id,
+      staffId: selectedStaffId || "", 
+    };
+    
+    setItems((prev) => [...prev, newItem]);
+    toast.success(`Redeemed ${serviceItem.serviceName} from ${pkg.packageName}`);
   };
 
   const handleSelectAppointment = async (appt: Appointment) => {
@@ -1060,7 +1205,22 @@ const Billing: React.FC = () => {
 
   const totalTaxableAmount = totals.subtotal;
   const totalGstAmountDisplay = totals.gst;
-  const totalAmount = totals.total;
+  
+  const selectedCustomerData = customerId ? globalCustomers.find((c: any) => c.id === customerId) : null;
+  const availableLoyaltyPoints = selectedCustomerData?.loyaltyPoints || 0;
+  
+  const maxPointsRedeemable = Math.min(
+     availableLoyaltyPoints, 
+     Math.ceil(totals.total / (loyaltyRedeemValue || 1))
+  );
+
+  // Auto-correct if user changed items and max redeemable dropped
+  if (loyaltyPointsToRedeem > maxPointsRedeemable && maxPointsRedeemable >= 0) {
+     setTimeout(() => setLoyaltyPointsToRedeem(maxPointsRedeemable), 0);
+  }
+
+  const loyaltyDiscountAmount = loyaltyEnabled ? (loyaltyPointsToRedeem * loyaltyRedeemValue) : 0;
+  const totalAmount = Math.max(0, totals.total - loyaltyDiscountAmount);
 
 
 
@@ -1176,75 +1336,7 @@ const Billing: React.FC = () => {
     }
   };
 
-  const handleFindEstimation = async (invoiceId: string) => {
-    try {
-      setLoading(true);
 
-      // 1. Try Local Search first (from globalData's bills)
-      const localMatch = globalBills?.find((b: any) =>
-        (b.id && b.id.toString().toLowerCase() === invoiceId.toLowerCase()) ||
-        (b.invoiceNumber && b.invoiceNumber.toString().toLowerCase() === invoiceId.toLowerCase())
-      );
-
-      let bill: any = localMatch;
-
-      // 2. If not found locally, try API
-      if (!bill) {
-        try {
-          const response = await estimationApi.getById(encodeURIComponent(invoiceId));
-          bill = response.data;
-        } catch (apiErr) {
-          console.warn("API fetch failed for estimation:", apiErr);
-        }
-      }
-
-      if (bill) {
-        setItems(bill.items.map((i: any) => {
-          const unitPrice = parseFloat(i.unitPrice ?? i.purchaseRate ?? 0);
-          const gstRate = parseFloat(i.gstRate ?? i.purchaseGstRate ?? 0);
-          const discountRate = parseFloat(i.discountRate ?? 0);
-          const qty = parseInt(i.quantity ?? 1);
-
-          const subtotal = unitPrice * qty;
-          const discountAmount = subtotal * (discountRate / 100);
-          const taxableAmount = subtotal - discountAmount;
-          const gstAmount = taxableAmount * (gstRate / 100);
-          const finalTotal = taxableAmount + gstAmount;
-
-          return {
-            id: i.productId,
-            barcode: i.productId,
-            name: i.productName,
-            price: unitPrice,
-            qty: qty,
-            total: Math.round(finalTotal), // Include GST in total
-            quantity: qty,
-            GST: gstRate,
-            Discount: discountRate,
-            purchaseRate: Number(i.purchaseRate || 0),
-          };
-        }));
-        setCustomerName(bill.customerName || "");
-        setCustomerPhone(bill.customerPhone ? String(bill.customerPhone) : "");
-        setCustomerEmail(bill.customerEmail || "");
-        setCustomerAddress(bill.customerAddress || "");
-        setCustomerGst(bill.customerGst || "");
-
-        const estId = bill.estimationId || bill.id;
-        setLoadEstId(estId);
-        setDocumentMode("Estimation"); // ensure we stay in estimation mode
-        setIsEstimationModalOpen(false);
-        toast.success(`Estimation Loaded!`);
-      } else {
-        toast.error(`No estimation found with ID: ${invoiceId}`);
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to fetch estimation.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleRestoreStock = async (barcode: string, qtyToRestore: number) => {
     if (!isReturnMode) return;
@@ -1289,15 +1381,46 @@ const Billing: React.FC = () => {
 
     let resolvedCustomerId = forceCustomerId || customerId;
 
-    // Auto-create customer if missing and phone is provided
-    if (!resolvedCustomerId && customerPhone && customerPhone.toString().trim().length > 0) {
+    // Check if customer already exists in database by phone or exact name to prevent duplicates
+    if (!resolvedCustomerId) {
+      const cleanPhone = (customerPhone || '').replace(/\D/g, '');
+      const existing = (cleanPhone.length >= 7)
+        ? globalCustomers.find(c => {
+            const cp = (c.phone || '').toString().replace(/\D/g, '');
+            return cp === cleanPhone || (cp.length >= 10 && cleanPhone.length >= 10 && cp.slice(-10) === cleanPhone.slice(-10));
+          })
+        : (customerName && customerName.trim().length > 0)
+          ? globalCustomers.find(c => c.name.trim().toLowerCase() === customerName.trim().toLowerCase())
+          : null;
+      if (existing) {
+        resolvedCustomerId = existing.id;
+        // Update contact info without creating a duplicate
+        customerApi.update(existing.id, {
+          name: customerName || existing.name,
+          phone: customerPhone || existing.phone,
+          email: customerEmail || existing.email || '',
+          address: customerAddress || existing.address || '',
+          gstin: customerGst || existing.gstin || '',
+          lastVisit: new Date().toISOString()
+        } as any).catch(err => console.error("Customer background update failed:", err));
+      }
+    }
+
+    // Auto-create customer ONLY if genuinely new (not found in database)
+    if (!resolvedCustomerId && customerName && customerName.trim().length > 0) {
       try {
         const addRes = await customerApi.add({
           name: customerName,
-          phone: customerPhone,
-          email: customerEmail,
-          address: customerAddress,
-          gstin: customerGst
+          phone: customerPhone || '',
+          email: customerEmail || '',
+          address: customerAddress || '',
+          gstin: customerGst || '',
+          totalSpent: 0,
+          totalPaid: 0,
+          pendingBalance: 0,
+          visitCount: 0,
+          loyaltyPoints: 0,
+          createdAt: new Date().toISOString()
         } as any);
         if (addRes.data && (addRes.data as any).id) {
           resolvedCustomerId = (addRes.data as any).id;
@@ -1317,10 +1440,8 @@ const Billing: React.FC = () => {
     );
 
     // Inject the freshly created/resolved customer ID if available
-    if (forceCustomerId) {
-      (billData as any).customerId = forceCustomerId;
-    } else if (customerId) {
-      (billData as any).customerId = customerId;
+    if (resolvedCustomerId) {
+      (billData as any).customerId = resolvedCustomerId;
     }
 
     // The helper returns a payload object. We can extend it.
@@ -1356,6 +1477,40 @@ const Billing: React.FC = () => {
             });
           } catch (commErr) {
             console.error("Failed to add commission for staff:", item.staffId, commErr);
+          }
+        }
+        // Handle Packages: Assign CustomerPackage
+        if (item.type === 'PACKAGE' && resolvedCustomerId) {
+          try {
+            // Find the package from global packages to get its services
+            const pkg = packages.find((p: any) => p.id === item.packageId);
+            if (pkg) {
+              await customerPackageApi.add({
+                customerId: resolvedCustomerId,
+                packageId: pkg.id!,
+                packageName: pkg.name,
+                purchaseDate: new Date().toISOString(),
+                billId: createdBill.id,
+                isActive: true,
+                items: pkg.items.map((i: any) => ({
+                  serviceId: i.serviceId,
+                  serviceName: i.serviceName || 'Unknown Service',
+                  totalQuantity: i.quantity * Number(item.qty || 1),
+                  usedQuantity: 0
+                }))
+              });
+            }
+          } catch (pkgErr) {
+            console.error("Failed to assign package to customer:", pkgErr);
+          }
+        }
+
+        // Handle Redeemed Package Services: Update usage
+        if (item.isRedeemed && item.customerPackageId && item.serviceId) {
+          try {
+            await customerPackageApi.usePackage(item.customerPackageId, item.serviceId, Number(item.quantity) || 1);
+          } catch (useErr) {
+            console.error("Failed to update package usage:", useErr);
           }
         }
       }
@@ -1478,13 +1633,43 @@ const Billing: React.FC = () => {
       // 1. Save/Get Customer Logic
       let finalCustomerId = customerId;
 
-      if (customerId) {
-        customerApi.update(customerId, { name: customerName, phone: customerPhone, email: customerEmail, address: customerAddress, gstin: customerGst } as any)
+      // Check if customer already exists in database by phone or name to avoid duplicate creation
+      if (!finalCustomerId) {
+        const cleanPhone = (customerPhone || '').replace(/\D/g, '');
+        const existing = (cleanPhone.length >= 7)
+          ? globalCustomers.find(c => {
+              const cp = (c.phone || '').toString().replace(/\D/g, '');
+              return cp === cleanPhone || (cp.length >= 10 && cleanPhone.length >= 10 && cp.slice(-10) === cleanPhone.slice(-10));
+            })
+          : (customerName && customerName.trim().length > 0)
+            ? globalCustomers.find(c => c.name.trim().toLowerCase() === customerName.trim().toLowerCase())
+            : null;
+        if (existing) {
+          finalCustomerId = existing.id;
+        }
+      }
+
+      if (finalCustomerId) {
+        // Existing customer — update their contact info without creating a duplicate
+        customerApi.update(finalCustomerId, { name: customerName, phone: customerPhone, email: customerEmail, address: customerAddress, gstin: customerGst } as any)
           .then(() => refreshCustomers())
           .catch(err => console.error("Background customer update failed:", err));
-      } else if (customerPhone && customerPhone.toString().trim().length > 0) {
+      } else if (customerName && customerName.trim().length > 0) {
+        // Genuinely new customer — create only if no match found
         try {
-          const addRes = await customerApi.add({ name: customerName, phone: customerPhone, email: customerEmail, address: customerAddress, gstin: customerGst } as any);
+          const addRes = await customerApi.add({
+            name: customerName,
+            phone: customerPhone || '',
+            email: customerEmail || '',
+            address: customerAddress || '',
+            gstin: customerGst || '',
+            totalSpent: 0,
+            totalPaid: 0,
+            pendingBalance: 0,
+            visitCount: 0,
+            loyaltyPoints: 0,
+            createdAt: new Date().toISOString()
+          } as any);
           if (addRes.data && (addRes.data as any).id) {
             finalCustomerId = (addRes.data as any).id;
           }
@@ -1496,11 +1681,19 @@ const Billing: React.FC = () => {
 
       // --- Unified Bill Creation/Conversion Logic ---
       const type = withGst ? "GST_INVOICE" : "ESTIMATE";
+      
       const payload = await buildPayloadFromUIItems(
         items, customerName, customerPhone, customerEmail, customerAddress,
         paymentMethod, receivedAmount, customerGst, type, selectedStaffId, staffCommissionPercentage, cashAmount, onlineAmount,
-        enableExpiryReminder, expiryDays, finalCustomerId, taxType
+        enableExpiryReminder, expiryDays, finalCustomerId, taxType,
+        (loyaltyEnabled ? loyaltyPointsToRedeem * loyaltyRedeemValue : 0),
+        (loyaltyEnabled ? loyaltyPointsToRedeem : 0),
+        0 // Temporary earned points
       );
+
+      if (loyaltyEnabled && loyaltySpendRatio > 0) {
+        payload.loyaltyPointsEarned = Math.floor(payload.finalAmount / loyaltySpendRatio);
+      }
 
       // Status PAID triggers stock deduction and commissions on the backend
       (payload as any).status = "PAID";
@@ -1522,6 +1715,33 @@ const Billing: React.FC = () => {
         refreshHolds();
         refreshCancelled();
         refreshProducts();
+
+        // --- Update Customer Purchase Stats ---
+        if (finalCustomerId) {
+          const cust = globalCustomers.find((c: any) => c.id === finalCustomerId);
+          const prevTotalSpent = cust?.totalSpent || 0;
+          const prevTotalPaid = cust?.totalPaid || 0;
+          const prevPending = cust?.pendingBalance || 0;
+          const prevVisits = cust?.visitCount || 0;
+          const prevLoyalty = cust?.loyaltyPoints || 0;
+
+          const customerUpdatePayload: any = {
+            totalSpent: round2(prevTotalSpent + payload.finalAmount),
+            totalPaid: round2(prevTotalPaid + payload.amountPaid),
+            pendingBalance: round2(prevPending + payload.pendingAmount),
+            visitCount: prevVisits + 1,
+            lastVisit: new Date().toISOString(),
+          };
+
+          // Merge loyalty points update if enabled
+          if (loyaltyEnabled) {
+            customerUpdatePayload.loyaltyPoints = prevLoyalty - payload.loyaltyPointsRedeemed + payload.loyaltyPointsEarned;
+          }
+
+          customerApi.update(finalCustomerId, customerUpdatePayload)
+            .then(() => refreshCustomers())
+            .catch(e => console.error("Failed to update customer stats:", e));
+        }
 
         // Update appointment status if one was linked
         if (selectedAppointmentId) {
@@ -1701,6 +1921,7 @@ const Billing: React.FC = () => {
     setSelectedStaffId("");
     setStaffCommissionPercentage("");
     setCustomerId(null);
+    setLoyaltyPointsToRedeem(0);
     setLoadEstId("");
     setEnableExpiryReminder(false);
     setExpiryDays("30");
@@ -1811,12 +2032,7 @@ const Billing: React.FC = () => {
       <ConfirmationDialog />
       {isReturnModalOpen && <ReturnModal onFind={handleFindBill} onClose={() => setIsReturnModalOpen(false)} />}
       {isAppointmentModalOpen && <AppointmentModal appointments={appointments} onSelect={handleSelectAppointment} onClose={() => setIsAppointmentModalOpen(false)} />}
-      {isEstimationModalOpen && (
-        <EstimationModal
-          onFind={handleFindEstimation}
-          onClose={() => setIsEstimationModalOpen(false)}
-        />
-      )}
+
       {zoomedImage && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-6" onClick={() => setZoomedImage(null)}>
           <div className="relative max-w-3xl w-full h-[80vh] bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -1873,11 +2089,11 @@ const Billing: React.FC = () => {
 
       <div className="flex flex-col gap-6 h-full mb-6 pb-20">
         {/* TOP PANE - CART */}
-        <div className="flex-1 flex flex-col bg-white/80 rounded-2xl shadow-xl overflow-hidden border border-blue-100 backdrop-blur-sm min-h-[400px]">
+        <div className="flex-1 flex flex-col bg-white/80 rounded-2xl shadow-xl overflow-hidden border border-blue-100 min-h-[400px]">
           {/* Header */}
           <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 border-b border-blue-100/50">
             {/* Premium Top Bar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/90 p-4 rounded-2xl shadow-sm border border-gray-100 backdrop-blur-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/90 p-4 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex items-center gap-4">
                 <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-200">
                   <ShoppingCart className="text-white" size={22} />
@@ -1900,22 +2116,7 @@ const Billing: React.FC = () => {
                   <RefreshCw size={18} className={globalLoading ? "animate-spin" : ""} />
                 </button>
 
-                {!isReturnMode && (
-                  <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-inner items-center">
-                    <button
-                      onClick={() => setDocumentMode("Billing")}
-                      className={`px-6 py-1.5 rounded-lg text-sm font-bold transition-all duration-300 ${documentMode === "Billing" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                    >
-                      Billing
-                    </button>
-                    <button
-                      onClick={() => setDocumentMode("Estimation")}
-                      className={`px-6 py-1.5 rounded-lg text-sm font-bold transition-all duration-300 ${documentMode === "Estimation" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                    >
-                      Estimation
-                    </button>
-                  </div>
-                )}
+                {/* Estimation Toggle Removed */}
               </div>
             </div>
           </div>
@@ -1939,11 +2140,15 @@ const Billing: React.FC = () => {
                     className="w-full bg-transparent border-none focus:ring-0 text-gray-700 placeholder-gray-400 font-medium py-2 px-2 text-sm outline-none"
                   />
                   {isProductDropdownOpen && productSuggestions.length > 0 && (
-                    <div className="absolute top-full mt-2 left-0 w-full bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
+                    <div className="absolute top-full mt-2 left-0 w-full bg-white border-2 border-blue-600 rounded-xl shadow-2xl z-[9999] max-h-60 overflow-y-auto ring-4 ring-blue-500/10 divide-y divide-gray-100 animate-in fade-in-50 duration-150">
+                      <div className="px-3 py-1.5 bg-blue-50 text-[10px] font-black uppercase tracking-wider text-blue-800 flex items-center justify-between sticky top-0 z-10 border-b border-blue-200">
+                        <span className="flex items-center gap-1"><PackageSearch size={12} /> Matching Products</span>
+                        <span className="text-[9px] text-blue-600 font-semibold">↑↓ to navigate, Enter to select</span>
+                      </div>
                       {productSuggestions.map((prod, idx) => (
                         <div
                           key={prod.id || prod.barcode}
-                          className={`px-4 py-2 cursor-pointer border-b border-gray-50 last:border-b-0 flex justify-between items-center transition-colors ${idx === highlightedProductIndex ? 'bg-blue-600 text-white' : 'hover:bg-blue-50 text-gray-800'}`}
+                          className={`px-3 py-2 text-sm cursor-pointer border-b border-gray-50 last:border-b-0 flex justify-between items-center transition-colors ${idx === highlightedProductIndex ? 'bg-blue-600 text-white' : 'hover:bg-blue-50 text-gray-800'}`}
                           onMouseEnter={() => setHighlightedProductIndex(idx)}
                           onClick={() => {
                             addProductToBill(prod);
@@ -1951,12 +2156,12 @@ const Billing: React.FC = () => {
                           }}
                         >
                           <div>
-                            <div className={`font-medium ${idx === highlightedProductIndex ? 'text-white' : 'text-gray-800'}`}>{prod.name}</div>
-                            <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-400'}`}>{prod.barcode}</div>
+                            <div className={`font-bold ${idx === highlightedProductIndex ? 'text-white' : 'text-gray-900'}`}>{prod.name}</div>
+                            <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-500'} font-mono`}>{prod.barcode || prod.id}</div>
                           </div>
                           <div className="text-right">
                             <div className={`font-bold ${idx === highlightedProductIndex ? 'text-white' : 'text-green-600'}`}>₹{prod.price}</div>
-                            <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-500'}`}>Stock: {prod.stockQuantity}</div>
+                            <div className={`text-xs ${idx === highlightedProductIndex ? 'text-blue-100' : 'text-gray-500'}`}>Stock: {prod.stockQuantity ?? 'N/A'}</div>
                           </div>
                         </div>
                       ))}
@@ -1971,7 +2176,7 @@ const Billing: React.FC = () => {
                 )}
 
                 <button onClick={handleAddProduct} disabled={loading}
-                  className={`px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all ${loading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                  className={`px-3 py-1.5 text-sm text-sm rounded-xl text-sm font-bold shadow-sm transition-all ${loading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                 >
                   {loading ? "..." : "Add"}
                 </button>
@@ -2007,7 +2212,7 @@ const Billing: React.FC = () => {
                 </thead>
                 <tbody>
                   {items.map((i, idx) => (
-                    <motion.tr key={i.barcode || i.id || idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    <motion.tr key={`${i.barcode || i.id || 'item'}-${idx}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                       className="border-t hover:bg-blue-50/60 transition"
                     >
                       <td className="p-2 text-center">{idx + 1}</td>
@@ -2023,6 +2228,9 @@ const Billing: React.FC = () => {
                         {i.name}
                         {i.type === 'SERVICE' && (
                           <span className="ml-2 text-[10px] bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded-full">SERVICE</span>
+                        )}
+                        {i.type === 'PACKAGE' && (
+                          <span className="ml-2 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">PACKAGE</span>
                         )}
                       </td>
                       <td className="p-2 text-left">
@@ -2094,7 +2302,7 @@ const Billing: React.FC = () => {
                             }
                           }}
                           className="border w-16 p-1 rounded mx-auto text-center"
-                          disabled={isReturnMode}
+                          disabled={isReturnMode || i.type === 'PACKAGE'}
                         />
                       </td>
                       <td className="p-2 text-center">
@@ -2108,7 +2316,7 @@ const Billing: React.FC = () => {
                             }
                           }}
                           className="border w-20 p-1 rounded mx-auto text-center font-mono text-xs"
-                          disabled={isReturnMode}
+                          disabled={isReturnMode || i.type === 'PACKAGE'}
                         />
                       </td>
                       <td className="p-2 text-center">
@@ -2143,42 +2351,119 @@ const Billing: React.FC = () => {
         </div>
 
         {/* BOTTOM PANE - SETTINGS & TOTALS */}
-        <div className="w-full bg-white/90 rounded-2xl shadow-xl overflow-hidden border border-blue-100 backdrop-blur-sm p-5 grid grid-cols-1 md:grid-cols-3 gap-6 bg-gradient-to-b from-gray-50/50 to-white">
+        <div className="w-full bg-white/90 rounded-2xl shadow-xl overflow-visible border border-blue-100 p-5 grid grid-cols-1 md:grid-cols-3 gap-6 bg-gradient-to-b from-gray-50/50 to-white relative z-20">
 
           {/* Column 1: Customer Details */}
-          <div className="flex flex-col gap-4 h-full">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3 h-full">
+          <div className="flex flex-col gap-4 h-full relative z-30">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3 h-full relative z-30">
               <div className="flex justify-between items-center mb-1">
-                <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User size={16} className="text-blue-500" /> Customer</h3>
-                <motion.button whileHover={{ scale: 1.02 }} onClick={() => setIsAppointmentModalOpen(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors"><Calendar size={12} /> Load Appt</motion.button>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User size={16} className="text-blue-500" /> Customer</h3>
+                  {customerId && (
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                      ✓ Existing Customer Linked
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {customerId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerId(null);
+                        setCustomerName("");
+                        setCustomerPhone("");
+                        setCustomerEmail("");
+                        setCustomerAddress("");
+                        setCustomerGst("");
+                        toast("Customer unlinked", { icon: 'ℹ️' });
+                      }}
+                      className="text-[11px] text-gray-500 hover:text-red-600 px-2 py-0.5 rounded hover:bg-red-50 transition-colors"
+                      title="Clear customer link"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <motion.button whileHover={{ scale: 1.02 }} onClick={() => setIsAppointmentModalOpen(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors"><Calendar size={12} /> Load Appt</motion.button>
+                </div>
               </div>
 
               <div className="space-y-3">
-                <div className="relative w-full">
+                <div className="relative w-full z-40">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input type="text" placeholder="Customer Name" ref={customerNameRef} value={customerName} onChange={handleCustomerNameChange} onFocus={() => { if (customerName) handleCustomerNameChange({ target: { value: customerName } } as any); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerPhoneRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
+                  <input type="text" placeholder="Customer Name" ref={customerNameRef} value={customerName} onChange={handleCustomerNameChange} onBlur={handleCustomerNameBlur} onFocus={() => { if (customerName) handleCustomerNameChange({ target: { value: customerName } } as any); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerPhoneRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all font-medium text-gray-800" />
                   {customerSuggestions.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-xl mt-1 z-50 max-h-48 overflow-y-auto">
+                    <div className="absolute top-full left-0 w-full min-w-[320px] bg-white border-2 border-blue-600 rounded-xl shadow-2xl mt-1 z-[9999] max-h-60 overflow-y-auto divide-y divide-gray-100 animate-in fade-in-50 duration-150">
+                      <div className="px-3 py-1.5 bg-blue-50 text-[10px] font-black uppercase tracking-wider text-blue-800 flex items-center justify-between sticky top-0 z-10 border-b border-blue-200">
+                        <span className="flex items-center gap-1"><User size={12} /> Available Customers ({customerSuggestions.length})</span>
+                        <span className="text-[9px] text-blue-600 font-semibold">Click to select</span>
+                      </div>
                       {customerSuggestions.map((c: any) => (
-                        <div key={c.id} onClick={() => selectCustomer(c)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0">
-                          <div className="font-medium text-gray-800">{c.name}</div>
-                          <div className="text-xs text-gray-400">{c.phone || "No Phone"}</div>
+                        <div
+                          key={c.id}
+                          onMouseDown={(e) => { e.preventDefault(); selectCustomer(c); }}
+                          onClick={() => selectCustomer(c)}
+                          className="px-3.5 py-2.5 hover:bg-blue-600 hover:text-white cursor-pointer transition-colors group flex justify-between items-center"
+                        >
+                          <div>
+                            <div className="font-bold text-gray-900 group-hover:text-white text-sm flex items-center gap-2">
+                              {c.name}
+                              {c.visitCount ? (
+                                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 group-hover:bg-white group-hover:text-blue-700 px-1.5 py-0.5 rounded-full">
+                                  ✓ {c.visitCount} visits
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="text-xs text-blue-600 group-hover:text-blue-100 font-mono font-medium flex items-center gap-1 mt-0.5">
+                              <Phone size={11} /> {c.phone || "No Phone"}
+                            </div>
+                          </div>
+                          {c.pendingBalance > 0 && (
+                            <span className="text-[10px] font-bold text-red-600 group-hover:text-red-200">
+                              Due: ₹{c.pendingBalance}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="relative w-full">
+                <div className="grid grid-cols-2 gap-3 relative z-30">
+                  <div className="relative w-full z-30">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <input type="text" placeholder="Phone" ref={customerPhoneRef} value={customerPhone} onChange={handlePhoneChange} onFocus={() => { if (customerPhone) handlePhoneChange({ target: { value: customerPhone } } as any); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerEmailRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all" />
+                    <input type="text" placeholder="Phone" ref={customerPhoneRef} value={customerPhone} onChange={handlePhoneChange} onBlur={handlePhoneBlur} onFocus={() => { if (customerPhone) handlePhoneChange({ target: { value: customerPhone } } as any); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); customerEmailRef.current?.focus(); } }} className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg w-full text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50/50 outline-none transition-all font-medium text-gray-800" />
                     {phoneSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-xl mt-1 z-50 max-h-48 overflow-y-auto">
+                      <div className="absolute top-full left-0 w-full min-w-[320px] bg-white border-2 border-blue-600 rounded-xl shadow-2xl mt-1 z-[9999] max-h-60 overflow-y-auto divide-y divide-gray-100 animate-in fade-in-50 duration-150">
+                        <div className="px-3 py-1.5 bg-blue-50 text-[10px] font-black uppercase tracking-wider text-blue-800 flex items-center justify-between sticky top-0 z-10 border-b border-blue-200">
+                          <span className="flex items-center gap-1"><Phone size={12} /> Matching Numbers ({phoneSuggestions.length})</span>
+                          <span className="text-[9px] text-blue-600 font-semibold">Click to select</span>
+                        </div>
                         {phoneSuggestions.map((c: any) => (
-                          <div key={c.id} onClick={() => selectCustomer(c)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0">
-                            <div className="font-medium text-gray-800">{c.name}</div>
-                            <div className="text-xs text-gray-400">{c.phone}</div>
+                          <div
+                            key={c.id}
+                            onMouseDown={(e) => { e.preventDefault(); selectCustomer(c); }}
+                            onClick={() => selectCustomer(c)}
+                            className="px-3.5 py-2.5 hover:bg-blue-600 hover:text-white cursor-pointer transition-colors group flex justify-between items-center"
+                          >
+                            <div>
+                              <div className="font-bold text-gray-900 group-hover:text-white text-sm flex items-center gap-2">
+                                {c.name}
+                                {c.visitCount ? (
+                                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 group-hover:bg-white group-hover:text-blue-700 px-1.5 py-0.5 rounded-full">
+                                    ✓ {c.visitCount} visits
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-xs text-blue-600 group-hover:text-blue-100 font-mono font-bold flex items-center gap-1 mt-0.5">
+                                <Phone size={11} /> {c.phone}
+                              </div>
+                            </div>
+                            {c.totalSpent > 0 && (
+                              <span className="text-[10px] font-semibold text-gray-500 group-hover:text-blue-100">
+                                Spent: ₹{c.totalSpent}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -2199,6 +2484,41 @@ const Billing: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {customerPackages.length > 0 && !isReturnMode && documentMode !== "Estimation" && (
+              <div className="bg-purple-50/50 rounded-xl shadow-sm border border-purple-200/50 p-4 space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar">
+                <h3 className="font-semibold text-purple-800 flex items-center gap-2 text-sm"><PackageSearch size={14} /> Available Packages ({customerPackages.filter(p => p.isActive).length})</h3>
+                <div className="space-y-2">
+                  {customerPackages.filter(p => p.isActive).map((pkg) => (
+                    <div key={pkg.id} className="bg-white border border-purple-100 rounded-lg p-2 shadow-sm text-sm">
+                      <div className="font-semibold text-gray-800 mb-1 flex justify-between">
+                        <span>{pkg.packageName}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {pkg.items?.map((item: any, idx: number) => {
+                          const remaining = item.totalQuantity - item.usedQuantity;
+                          if (remaining <= 0) return null;
+                          return (
+                            <div key={idx} className="flex justify-between items-center text-xs border-b border-gray-50 last:border-0 pb-1 last:pb-0">
+                              <span className="text-gray-600 truncate w-3/5" title={item.serviceName}>{item.serviceName}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-purple-700 font-medium">{remaining} left</span>
+                                <button 
+                                  onClick={() => handleRedeemPackageService(pkg, idx)}
+                                  className="px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded transition-colors"
+                                >
+                                  Redeem
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Column 2: Order & Payment */}
@@ -2291,11 +2611,43 @@ const Billing: React.FC = () => {
                 </div>
               )}
 
+              {loyaltyEnabled && selectedCustomerData && availableLoyaltyPoints > 0 && documentMode !== "Estimation" && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 mb-3">
+                  <div className="flex justify-between items-center mb-2 text-sm">
+                    <span className="font-semibold text-indigo-800">Loyalty Points</span>
+                    <span className="font-mono text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">{availableLoyaltyPoints} Available</span>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input 
+                      type="number" 
+                      min="0" 
+                      max={maxPointsRedeemable}
+                      value={loyaltyPointsToRedeem || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0;
+                        setLoyaltyPointsToRedeem(Math.min(val, maxPointsRedeemable));
+                      }}
+                      placeholder="Redeem points"
+                      className="flex-1 px-3 py-1.5 text-sm border border-indigo-200 rounded-md focus:ring-2 focus:ring-indigo-400 outline-none"
+                    />
+                    {loyaltyPointsToRedeem > 0 && (
+                      <span className="text-sm font-semibold text-green-600">-₹{(loyaltyPointsToRedeem * loyaltyRedeemValue).toFixed(2)}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1 mb-4">
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Subtotal</span>
                   <span className="font-mono">₹{(totalTaxableAmount || 0).toFixed(2)}</span>
                 </div>
+                {loyaltyPointsToRedeem > 0 && (
+                  <div className="flex justify-between text-sm text-green-600 font-medium">
+                    <span>Loyalty Discount</span>
+                    <span className="font-mono">-₹{(loyaltyDiscountAmount || 0).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>GST Total</span>
                   <span className="font-mono">₹{(totalGstAmountDisplay || 0).toFixed(2)}</span>
@@ -2337,36 +2689,22 @@ const Billing: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    {documentMode === "Billing" ? (
-                      <>
-                        <button onClick={() => handleSaveAndPrint(true)} disabled={loading} className="col-span-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 rounded-xl font-bold text-lg shadow-lg shadow-green-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 tracking-wide">
-                          {loading ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />} {loading ? "Saving..." : "Save & Print Bill"}
-                        </button>
-                        <button onClick={handleHoldBill} disabled={loading} className="col-span-1 bg-yellow-50 text-yellow-700 border border-yellow-200 py-2.5 rounded-xl font-semibold hover:bg-yellow-100 transition-colors flex items-center justify-center gap-2">
-                          Hold
-                        </button>
-                        <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                          Reset
-                        </button>
+                    <>
+                      <button onClick={() => handleSaveAndPrint(true)} disabled={loading} className="col-span-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 rounded-xl font-bold text-base shadow-lg shadow-green-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 tracking-wide">
+                        {loading ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />} {loading ? "Saving..." : "Save & Print Bill"}
+                      </button>
+                      <button onClick={handleHoldBill} disabled={loading} className="col-span-1 bg-yellow-50 text-yellow-700 border border-yellow-200 py-2.5 rounded-xl font-semibold hover:bg-yellow-100 transition-colors flex items-center justify-center gap-2">
+                        Hold
+                      </button>
+                      <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+                        Reset
+                      </button>
 
-                        <div className="col-span-2 flex justify-between mt-1 gap-2">
-                          <button onClick={() => setIsReturnModalOpen(true)} className="flex-1 bg-white border border-gray-200 text-gray-700 py-2 rounded-lg text-xs font-semibold hover:bg-gray-50 flex items-center justify-center gap-1"><Undo2 size={12} /> Return</button>
-                          <button onClick={handleSendWhatsApp} disabled={loading || !customerPhone || customerPhone.trim().length < 10} className="flex-1 bg-[#25D366]/10 border border-[#25D366]/30 text-[#128C7E] disabled:opacity-50 disabled:cursor-not-allowed py-2 rounded-lg text-xs font-semibold hover:bg-[#25D366]/20 flex items-center justify-center gap-1"><MessageCircle size={12} /> WhatsApp</button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => handleSaveAndPrint(false)} disabled={loading} className="col-span-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
-                          {loading ? <RefreshCw className="animate-spin" size={18} /> : <Printer size={18} />} Print Estimate
-                        </button>
-                        <button onClick={() => setIsEstimationModalOpen(true)} disabled={loading} className="col-span-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl font-semibold hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1">
-                          Load
-                        </button>
-                        <button onClick={handleReset} disabled={loading} className="col-span-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-1">
-                          Reset
-                        </button>
-                      </>
-                    )}
+                      <div className="col-span-2 flex justify-between mt-1 gap-2">
+                        <button onClick={() => setIsReturnModalOpen(true)} className="flex-1 bg-white border border-gray-200 text-gray-700 py-2 rounded-lg text-xs font-semibold hover:bg-gray-50 flex items-center justify-center gap-1"><Undo2 size={12} /> Return</button>
+                        <button onClick={handleSendWhatsApp} disabled={loading || !customerPhone || customerPhone.trim().length < 10} className="flex-1 bg-[#25D366]/10 border border-[#25D366]/30 text-[#128C7E] disabled:opacity-50 disabled:cursor-not-allowed py-2 rounded-lg text-xs font-semibold hover:bg-[#25D366]/20 flex items-center justify-center gap-1"><MessageCircle size={12} /> WhatsApp</button>
+                      </div>
+                    </>
                   </>
                 )}
               </div>
@@ -2379,3 +2717,4 @@ const Billing: React.FC = () => {
 };
 
 export default Billing;
+

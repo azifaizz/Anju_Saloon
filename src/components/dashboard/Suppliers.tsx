@@ -4,7 +4,7 @@ import { Pencil, Trash2, PlusCircle, X, Upload, CreditCard, Loader2, Save } from
 import { vendorService, Vendor } from '@/lib/api';
 import { useGlobalData } from '@/context/GlobalDataContext';
 import Papa from 'papaparse';
-import SupplierCreditPanel from './SupplierCreditPanel';
+
 import { SyncIndicator } from '@/components/SyncIndicator';
 import { useConfirm } from '@/hooks/useConfirm';
 
@@ -13,8 +13,7 @@ const Suppliers = () => {
   const { confirm: confirmAction, ConfirmationDialog } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Vendor | null>(null);
-  const [isCreditPanelOpen, setIsCreditPanelOpen] = useState(false);
-  const [selectedSupplierForCredit, setSelectedSupplierForCredit] = useState<Vendor | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false); // For CSV/local actions
   const [isSaving, setIsSaving] = useState(false);
@@ -170,10 +169,6 @@ const Suppliers = () => {
     setEditingSupplier(null);
   };
 
-  const handleOpenCredit = (s: Vendor) => {
-    setSelectedSupplierForCredit(s);
-    setIsCreditPanelOpen(true);
-  };
 
   const filteredSuppliers = suppliers.filter(s =>
     (s.name && s.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -190,10 +185,10 @@ const Suppliers = () => {
           <SyncIndicator isSyncing={isSyncing} />
         </div>
         <div className="flex gap-4">
-          <button onClick={handleUploadClick} className="px-5 py-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2">
+          <button onClick={handleUploadClick} className="px-3 py-1.5 text-sm text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2">
             <Upload size={20} /> Upload CSV
           </button>
-          <button onClick={() => handleOpenModal(null)} className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2">
+          <button onClick={() => handleOpenModal(null)} className="px-3 py-1.5 text-sm text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2">
             <PlusCircle size={20} /> Add Supplier
           </button>
         </div>
@@ -258,7 +253,7 @@ const Suppliers = () => {
                         <td className="p-4">{s.address}</td>
                         <td className="p-4">
                           <button onClick={() => handleEditClick(s)} className="text-blue-600 hover:text-blue-800"><Pencil size={18} /></button>
-                          <button onClick={() => handleOpenCredit(s)} className="text-purple-600 hover:text-purple-800 ml-3" title="Manage Credit"><CreditCard size={18} /></button>
+
                           <button onClick={() => handleDeleteSupplier(s.id)} disabled={deletingId === s.id} className="text-red-600 hover:text-red-800 ml-3 disabled:opacity-50">{deletingId === s.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}</button>
                         </td>
                       </>
@@ -275,17 +270,7 @@ const Suppliers = () => {
         <SupplierFormModal supplier={editingSupplier} onSave={handleSaveSupplier} onClose={handleCloseModal} isSaving={isSaving} />
       )}
 
-      {isCreditPanelOpen && selectedSupplierForCredit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-            <SupplierCreditPanel
-              supplierId={selectedSupplierForCredit.id}
-              supplierName={selectedSupplierForCredit.name}
-              onClose={() => setIsCreditPanelOpen(false)}
-            />
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };

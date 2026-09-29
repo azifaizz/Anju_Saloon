@@ -6,12 +6,12 @@ import { Download, ShoppingCart, TrendingUp, Truck, Filter, Lock } from 'lucide-
 import { utils, writeFile } from 'xlsx';
 import { useGlobalData } from '@/context/GlobalDataContext';
 
-type ReportTab = 'sales' | 'services' | 'products' | 'staff' | 'inventory' | 'profit';
+type ReportTab = 'sales' | 'services' | 'products' | 'staff' | 'inventory' | 'profit' | 'appointments' | 'customers';
 type PaymentMethod = 'all' | 'cash' | 'card' | 'upi' | 'cash + upi' | 'other';
 type SystemType = 'All' | 'Retail';
 
 const Reports = () => {
-  const { products: globalProducts, bills: globalBills, cancelledBills: globalCancelled, loading: globalLoading, vendors } = useGlobalData();
+  const { products: globalProducts, bills: globalBills, cancelledBills: globalCancelled, loading: globalLoading, vendors, appointments: globalAppointments, customers: globalCustomers } = useGlobalData();
   const [activeTab, setActiveTab] = useState<ReportTab>('sales');
   const [data, setData] = useState<any[]>([]);
   const [totalBills, setTotalBills] = useState(0);
@@ -529,6 +529,35 @@ const Reports = () => {
               });
           });
         setData(profitData);
+      } else if (activeTab === 'appointments') {
+        let serial = 1;
+        const apptData = globalAppointments
+          .filter(a => isWithinRange(a.date))
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .map(a => ({
+            'S.No': serial++,
+            Date: new Date(a.date).toLocaleDateString('en-GB'),
+            Time: a.startTime + ' - ' + a.endTime,
+            Customer: a.customerName,
+            Service: a.serviceName,
+            Staff: a.staffName || '-',
+            Status: a.status
+          }));
+        setData(apptData);
+      } else if (activeTab === 'customers') {
+        let serial = 1;
+        const customerData = globalCustomers
+          .sort((a, b) => (b.loyaltyPoints || 0) - (a.loyaltyPoints || 0))
+          .map(c => ({
+            'S.No': serial++,
+            Name: c.name,
+            Phone: c.phone || '-',
+            Visits: c.visitCount || 0,
+            'Total Spent': (c.totalSpent || 0).toFixed(0),
+            'Loyalty Points': c.loyaltyPoints || 0,
+            'Last Visit': c.lastVisit ? new Date(c.lastVisit).toLocaleDateString('en-GB') : '-'
+          }));
+        setData(customerData);
       }
     } catch (err: any) {
       console.error('Error fetching reports:', err);
@@ -540,7 +569,7 @@ const Reports = () => {
 
   useEffect(() => {
     fetchReports();
-  }, [activeTab, startDate, endDate, paymentFilter, systemTypeFilter, globalBills, globalProducts]);
+  }, [activeTab, startDate, endDate, paymentFilter, systemTypeFilter, globalBills, globalProducts, globalAppointments, globalCustomers]);
 
   const exportExcel = () => {
     if (!filteredData.length) { toast.error('No data.'); return; }
@@ -605,10 +634,10 @@ const Reports = () => {
               </button>
             ))}
           </div>
-          <button onClick={() => setShowCancelledModal(true)} className="px-5 py-2.5 bg-red-600 text-white rounded-lg flex items-center gap-2 hover:bg-red-700">
+          <button onClick={() => setShowCancelledModal(true)} className="px-3 py-1.5 text-sm text-sm bg-red-600 text-white rounded-lg flex items-center gap-2 hover:bg-red-700">
             <Filter size={18} /> View Cancelled
           </button>
-          <button onClick={exportExcel} className="px-5 py-2.5 bg-green-600 text-white rounded-lg flex items-center gap-2 hover:bg-green-700">
+          <button onClick={exportExcel} className="px-3 py-1.5 text-sm text-sm bg-green-600 text-white rounded-lg flex items-center gap-2 hover:bg-green-700">
             <Download size={18} /> Export Excel
           </button>
         </div>
@@ -720,6 +749,8 @@ const Reports = () => {
         <Tab icon={TrendingUp} label="Staff Commissions" active={activeTab === 'staff'} onClick={() => setActiveTab('staff')} />
         <Tab icon={Truck} label="Inventory" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
         <Tab icon={TrendingUp} label="Profit" active={activeTab === 'profit'} onClick={() => setActiveTab('profit')} />
+        <Tab icon={Filter} label="Appointments" active={activeTab === 'appointments'} onClick={() => setActiveTab('appointments')} />
+        <Tab icon={Filter} label="Customers" active={activeTab === 'customers'} onClick={() => setActiveTab('customers')} />
       </div>
 
       {isLoading ? <div className="text-center py-20">Loading...</div> : <ReportTable data={filteredData} activeTab={activeTab} totalBills={totalBills} />}

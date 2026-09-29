@@ -1271,7 +1271,7 @@ const DailyActions = () => {
                     {/* Graph Section */}
                     {showGraph && (
                         <div ref={graphRef} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-in fade-in slide-in-from-top-4 duration-300">
-                            <h3 className="text-lg font-bold text-slate-700 mb-6 flex justify-between">
+                            <h3 className="text-base font-bold text-slate-700 mb-6 flex justify-between">
                                 <span>Earnings vs Expenses</span>
                                 <div className="text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
                                     {startDate === endDate
@@ -1335,7 +1335,7 @@ const DailyActions = () => {
 
                             {/* Add Entry Form */}
                             <div className={`bg-white p-6 rounded-xl shadow-sm border border-slate-200 transition-colors ${editingId ? 'border-amber-200 bg-amber-50/30' : ''}`}>
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                                <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
                                     {editingId ? <Pencil size={18} className="mr-2 text-amber-600" /> : <Plus size={18} className="mr-2" />}
                                     {editingId
                                         ? (newEntry.type === 'INCOME' ? 'Edit Income' : 'Edit Expense')
@@ -1498,7 +1498,7 @@ const DailyActions = () => {
                                         value={openingBalance}
                                         onChange={(e) => setOpeningBalance(e.target.value)}
                                         placeholder="0.00"
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg py-3 pl-8 pr-4 text-lg font-mono font-bold focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-600"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg py-3 pl-8 pr-4 text-base font-mono font-bold focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-600"
                                     />
                                 </div>
                             </div>
@@ -1540,7 +1540,7 @@ const DailyActions = () => {
 
                             {/* Total Calculation */}
                             <div className="mt-6 pt-6 border-t border-slate-700 space-y-4">
-                                <div className="flex justify-between items-center text-lg">
+                                <div className="flex justify-between items-center text-base">
                                     <span className="text-slate-400">Physical Total</span>
                                     <span className="font-bold font-mono text-2xl">₹{physicalTotal.toLocaleString()}</span>
                                 </div>
@@ -1654,14 +1654,14 @@ const DailyActions = () => {
                             <div className="p-4 rounded-lg border border-slate-100 bg-slate-50/50 flex justify-between items-center">
                                 <div>
                                     <p className="text-[9pt] font-semibold text-slate-400 uppercase tracking-wider">Total Income</p>
-                                    <p className="text-lg font-bold text-slate-800 mt-1">₹{(salesBucket.total + totalManualIncome).toLocaleString()}</p>
+                                    <p className="text-base font-bold text-slate-800 mt-1">₹{(salesBucket.total + totalManualIncome).toLocaleString()}</p>
                                 </div>
                                 <Plus size={24} className="text-slate-400 opacity-50" />
                             </div>
                             <div className="p-4 rounded-lg border border-slate-100 bg-slate-50/50 flex justify-between items-center">
                                 <div>
                                     <p className="text-[9pt] font-semibold text-slate-400 uppercase tracking-wider">Total Expenses</p>
-                                    <p className="text-lg font-bold text-slate-800 mt-1">₹{(totalManualExpense + totalCommissionExpense).toLocaleString()}</p>
+                                    <p className="text-base font-bold text-slate-800 mt-1">₹{(totalManualExpense + totalCommissionExpense).toLocaleString()}</p>
                                 </div>
                                 <TrendingDown size={24} className="text-slate-400 opacity-50" />
                             </div>
@@ -1734,14 +1734,14 @@ const DailyActions = () => {
                                 <p className="text-[10pt] font-semibold text-slate-500 uppercase tracking-widest">Physical Total</p>
                                 <p className="text-3xl font-bold text-slate-900 mt-1 font-mono">₹{physicalTotal.toLocaleString()}</p>
                             </div>
-                            <div className={`px-6 py-3 rounded-lg border-2 flex items-center gap-3 ${isMatched ? 'bg-white border-emerald-100' : 'bg-white border-red-100'}`}>
+                            <div className={`px-3 py-1.5 text-sm text-sm rounded-lg border-2 flex items-center gap-3 ${isMatched ? 'bg-white border-emerald-100' : 'bg-white border-red-100'}`}>
                                 {isMatched ? <CheckCircle className="text-emerald-500" size={24} /> : <AlertCircle className="text-red-500" size={24} />}
                                 <div>
                                     <p className={`text-[10pt] font-bold uppercase tracking-widest ${isMatched ? 'text-emerald-600' : 'text-red-600'}`}>
                                         {isMatched ? "VERIFIED" : "MISMATCH"}
                                     </p>
                                     {!isMatched && (
-                                        <p className="text-lg font-bold text-red-600 font-mono italic">
+                                        <p className="text-base font-bold text-red-600 font-mono italic">
                                             {difference > 0 ? '+' : ''}{difference.toLocaleString()}
                                         </p>
                                     )}

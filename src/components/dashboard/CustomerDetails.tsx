@@ -3,10 +3,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     User, Phone, Mail, MapPin, Calendar, Clock, ArrowLeft,
     Package, AlertCircle, CheckCircle2, CreditCard,
-    ChevronRight, ExternalLink, IndianRupee, Bell
+    ChevronRight, ExternalLink, IndianRupee, Bell, PackageSearch
 } from 'lucide-react';
 import {
-    customerApi, billingApi,
+    customerApi, billingApi, customerPackageApi,
     Customer, Bill, BillDetails
 } from '@/lib/api';
 import { useGlobalData } from '@/context/GlobalDataContext';
@@ -20,6 +20,7 @@ const CustomerDetails = () => {
     const { bills } = useGlobalData();
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [customerBills, setCustomerBills] = useState<Bill[]>([]);
+    const [customerPackages, setCustomerPackages] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const reminderRef = useRef<HTMLDivElement>(null);
 
@@ -49,11 +50,31 @@ const CustomerDetails = () => {
                 setCustomer(found);
 
                 // Filter bills for this customer
-                const filteredBills = bills.filter(b =>
-                    b.customerId === id ||
-                    (b.customerPhone?.toString() === found.phone)
-                );
+                const cleanFoundPhone = found.phone ? found.phone.toString().replace(/\D/g, '') : '';
+                const filteredBills = bills.filter(b => {
+                    if (b.customerId === id || (b as any).customer_id === id) return true;
+                    if (cleanFoundPhone.length >= 7 && b.customerPhone) {
+                        const bPhone = b.customerPhone.toString().replace(/\D/g, '');
+                        if (bPhone === cleanFoundPhone || (bPhone.length >= 10 && cleanFoundPhone.length >= 10 && bPhone.slice(-10) === cleanFoundPhone.slice(-10))) {
+                            return true;
+                        }
+                    }
+                    if (found.name && b.customerName && b.customerName.trim().toLowerCase() === found.name.trim().toLowerCase()) {
+                        return true;
+                    }
+                    return false;
+                });
                 setCustomerBills(filteredBills);
+
+                // Fetch customer packages
+                try {
+                    const pkgRes = await customerPackageApi.getByCustomer(id!);
+                    if (pkgRes.data) {
+                        setCustomerPackages(pkgRes.data);
+                    }
+                } catch (pkgErr) {
+                    console.error("Failed to fetch customer packages", pkgErr);
+                }
             }
         } catch (err) {
             console.error("Failed to fetch customer details", err);
@@ -145,7 +166,7 @@ const CustomerDetails = () => {
                 <p className="text-gray-500 mb-8 max-w-sm">The customer profile you're looking for doesn't exist or has been removed.</p>
                 <button
                     onClick={() => navigate(-1)}
-                    className="px-8 py-3 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all"
+                    className="px-5 py-2 text-sm bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all"
                 >
                     <ArrowLeft size={20} /> GO BACK
                 </button>
@@ -266,7 +287,7 @@ const CustomerDetails = () => {
                     <div className="text-left md:text-right bg-white p-6 rounded-[2rem] shadow-xl border border-transparent shrink-0 min-w-[240px] flex flex-col items-start md:items-end justify-center">
                         <div className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em] mb-1">Payment Deadline</div>
                         <div className="text-2xl font-black mb-3 text-gray-900">{getDeadlineDate(activeReminderBill)}</div>
-                        <div className={`inline-flex items-center px-4 py-2 rounded-xl text-sm font-black shadow-md uppercase tracking-wider ${activeReminderStatus.badgeColor}`}>
+                        <div className={`inline-flex items-center px-3 py-1.5 text-sm rounded-xl text-sm font-black shadow-md uppercase tracking-wider ${activeReminderStatus.badgeColor}`}>
                             {activeReminderStatus.label}
                         </div>
                     </div>
@@ -322,7 +343,69 @@ const CustomerDetails = () => {
                         </div>
                     </div>
 
-                    <div className="space-y-6">
+                    {/* Active Packages Section */}
+                    {customerPackages.length > 0 && (
+                        <div className="space-y-6 mt-10">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-2xl font-black text-purple-800 flex items-center gap-3">
+                                    <Package className="text-purple-600" />
+                                    Active Packages
+                                    <span className="text-sm font-bold bg-purple-100 text-purple-700 px-3 py-1 rounded-full">{customerPackages.length} Packages</span>
+                                </h2>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {customerPackages.map((pkg) => (
+                                    <div key={pkg.id} className="bg-white rounded-3xl p-6 border-2 border-purple-100 shadow-sm relative overflow-hidden group">
+                                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                            <Package size={80} className="text-purple-600" />
+                                        </div>
+                                        <div className="relative z-10">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase mb-2 ${pkg.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                                                        {pkg.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                                    </span>
+                                                    <h3 className="font-black text-xl text-gray-900 leading-tight">{pkg.packageName}</h3>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-3 mt-4">
+                                                {pkg.items?.map((item: any, idx: number) => {
+                                                    const remaining = item.totalQuantity - item.usedQuantity;
+                                                    const percentage = Math.round((item.usedQuantity / item.totalQuantity) * 100);
+                                                    return (
+                                                        <div key={idx} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="text-sm font-bold text-gray-800 truncate pr-2">{item.serviceName}</span>
+                                                                <span className="text-xs font-black text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                                                                    {remaining} left
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                                                                <div 
+                                                                    className="bg-purple-500 h-1.5 rounded-full" 
+                                                                    style={{ width: `${percentage}%` }}
+                                                                ></div>
+                                                            </div>
+                                                            <div className="text-[10px] text-gray-400 mt-1 font-medium text-right">
+                                                                {item.usedQuantity} / {item.totalQuantity} used
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                            
+                                            <div className="mt-4 pt-4 border-t border-purple-50 flex items-center justify-between text-xs font-medium text-gray-500">
+                                                <span>Purchased: {new Date(pkg.purchaseDate).toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="space-y-6 mt-10">
                         <div className="flex items-center justify-between">
                             <h2 className="text-2xl font-black text-gray-800 flex items-center gap-3">
                                 <Package className="text-blue-600" />
@@ -334,7 +417,7 @@ const CustomerDetails = () => {
                         {allProducts.length === 0 ? (
                             <div className="bg-gray-50 border-2 border-dashed rounded-3xl p-12 text-center">
                                 <Package className="mx-auto text-gray-300 mb-4" size={64} />
-                                <p className="text-gray-500 font-bold text-lg">No purchases recorded for this customer.</p>
+                                <p className="text-gray-500 font-bold text-base">No purchases recorded for this customer.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -359,7 +442,7 @@ const CustomerDetails = () => {
                     </div>
                     <button
                         onClick={() => navigate(`/admin/customers/${id}`)}
-                        className="px-8 py-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all flex items-center gap-2"
+                        className="px-5 py-2 text-sm bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all flex items-center gap-2"
                     >
                         View Full History & Stats <ChevronRight size={20} />
                     </button>
@@ -410,10 +493,10 @@ const PurchaseCard = ({ item, billId, navigate }: { item: any, billId: string | 
                         </div>
                     </div>
 
-                    <div className="bg-gray-900 rounded-3xl p-4 flex items-center justify-between">
+                    <div className="bg-blue-600 rounded-3xl p-4 flex items-center justify-between">
                         <div>
                             <p className="text-[9px] font-black text-gray-400 uppercase">Remaining Due (Bill)</p>
-                            <p className="text-lg font-black text-white">₹{(item.dueBillAmount || 0).toFixed(2)}</p>
+                            <p className="text-base font-black text-white">₹{(item.dueBillAmount || 0).toFixed(2)}</p>
                         </div>
                         <div className="h-10 w-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
                             <CreditCard size={20} />

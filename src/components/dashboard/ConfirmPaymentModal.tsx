@@ -22,7 +22,7 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({ isOpen, onClo
             >
                 {/* Header */}
                 <div className="flex justify-between items-center p-4 border-b border-gray-100">
-                    <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+                    <h3 className="text-base font-bold text-gray-900">{title}</h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
                         <X size={20} />
                     </button>
@@ -60,13 +60,13 @@ const ConfirmPaymentModal: React.FC<ConfirmPaymentModalProps> = ({ isOpen, onClo
                 <div className="flex gap-3 p-4 bg-gray-50 border-t border-gray-100 rounded-b-xl">
                     <button
                         onClick={onClose}
-                        className="flex-1 px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
+                        className="flex-1 px-3 py-1.5 text-sm.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={() => onConfirm(paymentMethod)}
-                        className="flex-1 px-4 py-2.5 text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-colors font-semibold text-sm shadow-sm"
+                        className="flex-1 px-3 py-1.5 text-sm.5 text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-colors font-semibold text-sm shadow-sm"
                     >
                         Confirm
                     </button>

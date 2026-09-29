@@ -3,13 +3,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Pencil, Trash2, PlusCircle, X, Layers, Upload, Printer, ListPlus,
+  Pencil, Trash2, PlusCircle, X, Layers, Upload, Download, Printer, ListPlus,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CheckCircle, Info, Calendar,
   CreditCard, CheckCircle2, AlertCircle, RefreshCw, UserPlus, UserCheck, DollarSign, Image as ImageIcon
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { productApi, vendorApi, CreditTransaction, Vendor, Product as BaseProduct } from '@/lib/api';
+import { productApi, vendorApi, stockTransactionApi, Vendor, Product as BaseProduct } from '@/lib/api';
 import { useGlobalData } from '@/context/GlobalDataContext';
+import { useAuth } from '@/context/AuthContext';
 import Barcode from 'react-barcode';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import * as Papa from 'papaparse';
@@ -22,8 +23,6 @@ import { printProductBarcodes } from '@/lib/printBarcodeUtils';
 
 // Data Structures
 interface Product extends BaseProduct {
-  creditTransactionId?: string;
-  billNo?: string;
 }
 
 type SelectedProducts = {
@@ -33,127 +32,12 @@ type SelectedProducts = {
     name: string;
     price: number;
     vendorNickname: string;
-    series: string;
-    billNo: string;
   }
 };
 
-const getCreditStatus = (amount: number, paidAmount: number): CreditTransaction['status'] => {
-  if (amount <= 0) return 'PAID';
-  if (paidAmount > 0) return 'PARTIAL';
-  return 'PENDING';
-};
 
-const findCreditTransaction = (credits: any[], productId: string, creditTransactionId?: string) => {
-  if (creditTransactionId) {
-    const directMatch = credits.find((t: any) => t.id === creditTransactionId);
-    if (directMatch) return directMatch;
-  }
 
-  return credits.find((t: any) => {
-    if (!Array.isArray(t.products)) return false;
-    return t.products.some((product: any) => product?.id === productId || product?.barcode === productId);
-  });
-};
 
-const buildCreditProductPayload = (payload: any) => ({
-  id: payload.id,
-  name: payload.name,
-  category: payload.category,
-  purchaseRate: Number(payload.purchaseRate) || 0,
-  purchaseGst: Number(payload.purchaseGst) || 0,
-  purchaseDisc: Number(payload.purchaseDisc) || 0,
-  price: Number(payload.price) || 0,
-  sellingPrice: Number(payload.price) || 0,
-  discount: Number(payload.discount) || 0,
-  stockQuantity: Number(payload.stockQuantity) || 0,
-  vendorId: payload.vendorId,
-  vendorName: payload.vendorName,
-  vendorNickname: payload.vendorNickname || '',
-  barcode: payload.barcode || '',
-  billNo: payload.billNo || '',
-  createdAt: payload.createdAt || new Date().toISOString(),
-});
-
-const syncVendorCreditForProduct = async (
-  payload: any,
-  options?: {
-    shouldSync?: boolean;
-    originalProduct?: Product | null;
-  }
-) => {
-  const shouldSync = options?.shouldSync ?? true;
-  if (!shouldSync || !payload.vendorId) return;
-
-  const currentQty = Number(payload.stockQuantity) || 0;
-  const currentRate = Number(payload.purchaseRate) || 0;
-  if (currentQty <= 0 || currentRate <= 0) return;
-
-  const creditsRes = await vendorApi.getCredits(payload.vendorId);
-  const credits = creditsRes.data || [];
-  const matchedTx = findCreditTransaction(credits, payload.id, options?.originalProduct?.creditTransactionId);
-
-  const productEntry = buildCreditProductPayload(payload);
-  const totalAmount = currentQty * currentRate;
-  const paidAmount = matchedTx ? Number(matchedTx.paidAmount) || 0 : 0;
-  const balance = Math.max(0, totalAmount - paidAmount);
-
-  if (matchedTx) {
-    await vendorApi.updateCredit(matchedTx.id!, {
-      amount: totalAmount,
-      balance,
-      status: getCreditStatus(totalAmount, paidAmount),
-      products: [productEntry],
-    });
-    return;
-  }
-
-  await vendorApi.addCredit({
-    vendorId: payload.vendorId,
-    invoice: payload.billNo || payload.barcode || payload.name,
-    amount: totalAmount,
-    paidAmount: 0,
-    balance,
-    paymentMode: 'CREDIT',
-    status: getCreditStatus(totalAmount, 0),
-    description: `Purchase of ${payload.name}`,
-    date: payload.createdAt || new Date().toISOString(),
-    createdAt: payload.createdAt || new Date().toISOString(),
-    products: [productEntry],
-  });
-};
-
-const removeProductFromVendorCredits = async (
-  productId: string,
-  oldVendorId: string,
-  creditTransactionId?: string
-) => {
-  if (!oldVendorId) return;
-  const creditsRes = await vendorApi.getCredits(oldVendorId);
-  const credits = creditsRes.data || [];
-  const matchedTx = findCreditTransaction(credits, productId, creditTransactionId);
-  if (!matchedTx) return;
-
-  const remainingProducts = (matchedTx.products || []).filter(
-    (p: any) => p.id !== productId
-  );
-
-  if (remainingProducts.length === 0) {
-    await vendorApi.deleteCredit(matchedTx.id);
-  } else {
-    const newAmount = remainingProducts.reduce(
-      (sum: number, p: any) =>
-        sum + ((p.purchaseRate || 0) + (p.purchaseGst || 0)) * (p.stockQuantity || 0),
-      0
-    );
-    await vendorApi.updateCredit(matchedTx.id, {
-      amount: newAmount,
-      products: remainingProducts,
-      balance: Math.max(0, newAmount - (matchedTx.paidAmount || 0)),
-      status: getCreditStatus(newAmount, matchedTx.paidAmount || 0),
-    });
-  }
-};
 
 // =================================================================================
 // START: STYLISH PAGINATION COMPONENT
@@ -266,7 +150,7 @@ const ResultCard = ({ icon, label, value, color = "text-gray-900" }: { icon: Rea
     </div>
     <div>
       <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">{label}</p>
-      <p className={`text-lg font-black ${color}`}>{value}</p>
+      <p className={`text-base font-black ${color}`}>{value}</p>
     </div>
   </div>
 );
@@ -284,6 +168,8 @@ const normalizeGst = (gst: string) => {
 };
 
 const Products = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const { products: globalProducts, vendors: globalVendors, loading: globalLoading, refreshProducts, refreshVendors, isSyncing } = useGlobalData();
 
   // Combine all products for a unified view
@@ -441,21 +327,28 @@ const Products = () => {
     const payload = {
       id: formData.id || generateSixDigitId(),
       name: formData.name,
+      brand: formData.brand || '',
+      sku: formData.sku || '',
       category: formData.category,
       series: formData.series || '',
       purchaseRate: parseFloat(formData.purchaseRate as any) || 0,
       purchaseGst: parseFloat(formData.purchaseGst as any) || 0,
       purchaseDisc: parseFloat(formData.purchaseDisc as any) || 0,
       price: parseFloat(formData.price as any) || 0,
-      wholesaleSellingPrice: parseFloat(formData.wholesaleSellingPrice as any) || parseFloat(formData.price as any) || 0,
+      sellingPrice: parseFloat(formData.price as any) || 0,
       mrp: parseFloat(formData.mrp as any) || 0,
       discount: parseFloat(formData.discount as any) || 0,
       stockQuantity: parseInt(formData.stockQuantity as any, 10) || 0,
+      inventoryTracking: formData.inventoryTracking || 'TRACKED',
+      availabilityStatus: formData.availabilityStatus || 'AVAILABLE',
+      active: true,
+      batchNumber: formData.batchNumber || '',
+      expiryDate: formData.expiryDate || '',
+      unit: formData.unit || '',
       vendorId: formData.vendorId,
       vendorName: formData.vendorName,
       vendorNickname: formData.vendorNickname || '',
-      barcode: formData.barcode,
-      billNo: formData.billNo || '',
+      barcode: formData.barcode || formData.id || generateSixDigitId(),
       createdAt: formData.createdAt || now,
       updatedAt: now
     };
@@ -472,34 +365,22 @@ const Products = () => {
 
           await productApi.update(formData.id, updatePayload);
 
-          const purchaseRateChanged = Number(originalProduct?.purchaseRate || 0) !== Number(payload.purchaseRate || 0);
           const stockChanged = Number(originalProduct?.stockQuantity || 0) !== Number(payload.stockQuantity || 0);
-          const vendorChanged = originalProduct?.vendorId && originalProduct.vendorId !== payload.vendorId;
 
-          if (vendorChanged) {
+          if (stockChanged) {
             try {
-              await syncVendorCreditForProduct(payload, { shouldSync: true, originalProduct: null });
-              await removeProductFromVendorCredits(
-                payload.id,
-                originalProduct!.vendorId,
-                originalProduct!.creditTransactionId
-              );
-            } catch (migrationErr) {
-              console.error('Credit migration failed:', migrationErr);
-              toast.error('Product updated, but supplier credit migration failed. Please manually verify credits.');
-            }
-          } else {
-            const shouldSyncVendorCredit = purchaseRateChanged || (stockChanged && !!formData.affectCredit);
-            if (shouldSyncVendorCredit) {
-              try {
-                await syncVendorCreditForProduct(payload, {
-                  shouldSync: true,
-                  originalProduct,
-                });
-              } catch (syncErr) {
-                console.error('Vendor credit sync failed:', syncErr);
-                toast.error('Product updated, but failed to sync supplier credits.');
-              }
+              await stockTransactionApi.add({
+                productId: formData.id as string,
+                productName: payload.name,
+                transactionType: 'ADJUSTMENT',
+                quantity: payload.stockQuantity - (originalProduct?.stockQuantity || 0),
+                previousStock: originalProduct?.stockQuantity || 0,
+                resultingStock: payload.stockQuantity,
+                reason: 'Manual stock update',
+                createdAt: new Date().toISOString()
+              });
+            } catch (stErr) {
+              console.error('Stock transaction failed:', stErr);
             }
           }
 
@@ -510,12 +391,20 @@ const Products = () => {
           payload.id = savedId;
 
           try {
-            await syncVendorCreditForProduct(payload, { shouldSync: true });
-            await refreshVendors();
-          } catch (syncErr) {
-            console.error('Vendor credit create failed:', syncErr);
-            throw syncErr;
+            await stockTransactionApi.add({
+              productId: savedId as string,
+              productName: payload.name,
+              transactionType: 'OPENING_STOCK',
+              quantity: payload.stockQuantity,
+              previousStock: 0,
+              resultingStock: payload.stockQuantity,
+              reason: 'Initial stock',
+              createdAt: new Date().toISOString()
+            });
+          } catch (stErr) {
+            console.error('Stock transaction failed:', stErr);
           }
+
 
           if (payload.mrp > 0 && savedId) {
             try {
@@ -570,77 +459,13 @@ const Products = () => {
   };
 
   const handleDeleteProduct = (id: string) => {
-    confirmAction('Are you sure you want to delete this product? This will remove it from stock and update supplier credits if linked.', async () => {
-      setIsLoading(true);
+    confirmAction('Are you sure you want to delete this product? This will remove it from stock.', async () => {
       try {
-        const product = globalProducts.find(p => p.id === id);
-
-        // 1. Handle Supplier Credit Update
-        if (product && product.vendorId) {
-          try {
-            const creditsRes = await vendorApi.getCredits(product.vendorId);
-            const credits = creditsRes.data || [];
-
-            // Find linked transaction:
-            // Priority 1: Direct ID Match
-            let tx = credits.find((t: any) => product.creditTransactionId && t.id === product.creditTransactionId);
-
-            // Priority 2: Scan 'products' array in transactions if not found by ID
-            if (!tx) {
-              tx = credits.find((t: any) => t.products && Array.isArray(t.products) && t.products.some((pr: any) => pr.id === id));
-            }
-
-            if (tx) {
-              // Calculate deduction amount
-              // If the transaction has a product list, we should remove THIS product from it.
-              // If it's a simple amount transaction, we subtract the product's value.
-
-              const newProducts = tx.products || [];
-              const productInTxIndex = newProducts.findIndex((pr: any) => pr.id === id);
-
-              let deduction = 0;
-
-              if (productInTxIndex !== -1) {
-                // Determine deduction from the specific entry in the transaction if possible
-                const pEntry = newProducts[productInTxIndex];
-                deduction = (pEntry.purchaseRate || product.purchaseRate || 0) * (pEntry.stockQuantity || product.stockQuantity || 0);
-                // Remove from list
-                newProducts.splice(productInTxIndex, 1);
-              } else {
-                // Fallback if not in list but linked by ID: deduct full value of current product
-                deduction = (product.purchaseRate || 0) * (product.stockQuantity || 0);
-              }
-
-              const newAmount = Math.max(0, (tx.amount || 0) - deduction);
-              const newBalance = Math.max(0, (tx.balance || 0) - deduction);
-
-              if (newAmount <= 0) {
-                await vendorApi.deleteCredit(tx.id!);
-                toast.success("Removed empty supplier credit transaction.");
-              } else {
-                // Update with new amount AND new product list
-                await vendorApi.updateCredit(tx.id!, {
-                  amount: newAmount,
-                  balance: newBalance,
-                  products: newProducts // Update the reference list
-                } as any);
-                toast.success("Updated supplier credit transaction.");
-              }
-            }
-          } catch (e) {
-            console.error("Credit update failed", e);
-            toast.error("Product deleted, but failed to update supplier credits.");
-          }
-        }
-
-        // 2. Delete Product
         await productApi.delete(id);
         await refreshProducts();
         toast.success("Product deleted successfully.");
       } catch (err: any) {
         toast.error(`Delete failed: ${err.message}`);
-      } finally {
-        setIsLoading(false);
       }
     }, 'Delete Product');
   };
@@ -652,19 +477,16 @@ const Products = () => {
       id: product.id || '',
       name: product.name || '',
       category: product.category || '',
-      series: product.series || '',
       vendorId: product.vendorId || '',
       vendorName: product.vendorName || '',
       vendorNickname: product.vendorNickname || '',
       purchaseRate: product.purchaseRate ?? '',
       purchaseDisc: product.purchaseDisc ?? '',
       price: product.price ?? '',
-      wholesaleSellingPrice: (product as any).wholesaleSellingPrice ?? product.price ?? '',
       stockQuantity: product.stockQuantity ?? '',
       purchaseGst: product.purchaseGst ?? '',
       discount: product.discount ?? '',
       barcode: product.barcode || '',
-      billNo: (product as any).billNo || '',
       mrp: product.mrp ?? ''
     });
   };
@@ -720,6 +542,8 @@ const Products = () => {
 
   useEffect(() => {
     fetchCategories();
+    refreshProducts();
+    refreshVendors();
   }, []);
 
   const handleAddOrUpdateCategory = async (oldCategory: string | null, newCategory: string) => {
@@ -747,15 +571,6 @@ const Products = () => {
       throw err;
     }
   };
-
-  // ... (rest of component) ...
-  // Wait, I am pasting `handleDeleteProduct` AND `CategoryModal` completely?
-  // Let's replace `CategoryModal` entirely with the new version.
-
-  // ...
-
-  // Skipping down to CategoryModal replacement target (lines 756+)
-
 
 
   const handleOpenModal = (product: Product | null) => {
@@ -814,12 +629,23 @@ const Products = () => {
     const errors: string[] = [];
 
     try {
-      // 1. Group Rows by Bill No + Supplier Name
+      // 0. Auto-add missing categories
+      const uniqueCategories = Array.from(new Set(csvData.map(r => (r['Category'] || r['category'])?.trim()).filter(Boolean)));
+      for (const cat of uniqueCategories) {
+        if (!categories.includes(cat)) {
+          try {
+            await productApi.addCategory({ name: cat });
+          } catch(err) {
+            console.error("Failed to add missing category from CSV", cat, err);
+          }
+        }
+      }
+
+      // 1. Group Rows by Supplier Name
       const billGroups: { [key: string]: any[] } = {};
       csvData.forEach(row => {
-        const billNo = row['Bill No'] || row['billNo'] || '';
         const supplierName = row['Supplier Name'] || row['supplierName'] || '';
-        const groupKey = `${normalizeString(billNo)}_${normalizeString(supplierName)}`;
+        const groupKey = `${normalizeString(supplierName)}`;
         if (!billGroups[groupKey]) billGroups[groupKey] = [];
         billGroups[groupKey].push(row);
       });
@@ -831,12 +657,11 @@ const Products = () => {
 
         // Validations
         const supplierName = firstRow['Supplier Name'] || firstRow['supplierName'];
-        const billNo = firstRow['Bill No'] || firstRow['billNo'];
         const date = firstRow['Date'] || firstRow['date'];
 
-        if (!supplierName || !billNo || !date) {
+        if (!supplierName || !date) {
           failedCount += groupRows.length;
-          errors.push(`Group ${groupKey}: Missing Supplier Name, Bill No, or Date.`);
+          errors.push(`Group ${groupKey}: Missing Supplier Name, or Date.`);
           continue;
         }
 
@@ -853,7 +678,7 @@ const Products = () => {
         const isValidGst = normalizedGst.length === 15;
 
         if (rawGst && !isValidGst) {
-          errors.push(`Warning for Bill ${billNo}: GST "${rawGst}" for supplier "${supplierName}" is not 15 characters.`);
+          errors.push(`Warning for supplier "${supplierName}": GST "${rawGst}" is not 15 characters.`);
         }
 
         if (vendor) {
@@ -906,11 +731,16 @@ const Products = () => {
 
           const productName = row['Product Name'] || row['productName'];
           const sellPrice = parseFloat(row['Selling Price'] || row['sellingPrice']) || 0;
-          const qty = parseInt(row['Stock Quantity'] || row['stockQuantity'], 10) || 0;
+          const productType = (row['Product Type'] || row['productType'] || 'RETAIL').toUpperCase();
+          const unlimitedRaw = row['Unlimited Stock'] || row['unlimitedStock'] || '';
+          const isUnlimited = unlimitedRaw.toLowerCase().startsWith('y') || unlimitedRaw.toLowerCase() === 'true';
 
-          if (!productName || buyPriceTotal <= 0 || qty <= 0) {
+          let qty = parseInt(row['Stock Quantity'] || row['stockQuantity'], 10) || 0;
+          if (isUnlimited) qty = 0;
+
+          if (!productName || buyPriceTotal < 0 || (!isUnlimited && qty <= 0 && productType !== 'SERVICE')) {
             failedCount++;
-            errors.push(`Row in Bill ${billNo}: Invalid Product Name, Purchase Price, or Quantity.`);
+            errors.push(`Row in CSV: Invalid Product Name, Purchase Price, or Quantity.`);
             continue;
           }
 
@@ -925,13 +755,13 @@ const Products = () => {
             purchaseRate: Number(baseRate.toFixed(2)),
             purchaseGst: Number(gstAmountPerUnit.toFixed(2)),
             price: sellPrice,
-            wholesaleSellingPrice: sellPrice,
             sellingPrice: sellPrice,
             stockQuantity: existingProduct ? (existingProduct.stockQuantity + qty) : qty,
+            inventoryTracking: isUnlimited ? 'NOT_TRACKED' : 'TRACKED',
+            systemType: productType,
             vendorId: vendor.id,
             vendorName: vendor.name,
             vendorNickname: vendor.nickname || vendor.name,
-            billNo: billNo,
             createdAt: date,
           };
 
@@ -950,31 +780,7 @@ const Products = () => {
           }
         }
 
-        // Create Purchase Entry (Credit Transaction)
-        if (billProducts.length > 0) {
-          const paidAmount = parseFloat(firstRow['Paid Amount'] || firstRow['paidAmount'] || 0) || 0;
-          const pendingAmount = Math.max(0, billTotalAmount - paidAmount);
 
-          const creditPayload: CreditTransaction = {
-            vendorId: vendor.id,
-            invoice: billNo,
-            amount: billTotalAmount,
-            paidAmount: paidAmount,
-            balance: pendingAmount,
-            paymentMode: paidAmount > 0 ? 'CASH' : 'CREDIT',
-            status: pendingAmount <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING'),
-            description: `Auto-generated from CSV Import on ${new Date().toLocaleDateString()}`,
-            date: date,
-            products: billProducts as any[],
-          };
-
-          try {
-            await vendorApi.addCredit(creditPayload);
-            totalCreditAdded += pendingAmount;
-          } catch (err: any) {
-            errors.push(`Failed to create credit ledger for Bill ${billNo}: ${err.message}`);
-          }
-        }
       }
 
       setUploadResults({
@@ -1012,6 +818,23 @@ const Products = () => {
         }
         const res = await productApi.add(p);
         const newId = res.data?.id || p.id;
+        
+        try {
+          const transactionDate = p.dateAdded ? new Date(p.dateAdded).toISOString() : new Date().toISOString();
+          await stockTransactionApi.add({
+            productId: newId as string,
+            productName: p.name,
+            transactionType: 'OPENING_STOCK',
+            quantity: Number(p.stockQuantity) || 0,
+            previousStock: 0,
+            resultingStock: Number(p.stockQuantity) || 0,
+            reason: 'Initial stock from bulk import',
+            createdAt: transactionDate
+          });
+        } catch (err) {
+          console.error('Failed to log stock transaction for bulk import:', err);
+        }
+
         if (p.imageFile && newId) {
           await productApi.uploadImage(newId, p.imageFile);
         }
@@ -1024,21 +847,76 @@ const Products = () => {
     return { successCount, errorCount };
   };
 
-  const handleSaveMultipleProducts = async (productsToSave: any[], creditData?: Partial<CreditTransaction>) => {
+  const handleDownloadTemplate = () => {
+    const headers = [
+      "Supplier Name",
+      "Date",
+      "Product Name",
+      "Product Type",
+      "Purchase Price",
+      "Selling Price",
+      "Stock Quantity",
+      "Unlimited Stock",
+      "Category",
+      "GST %",
+      "Supplier Contact",
+      "Supplier Address",
+      "Supplier GST",
+      "Supplier Nickname",
+      "Product ID"
+    ];
+    
+    // Create a sample row
+    const sampleRow = [
+      "Sample Supplier",
+      new Date().toISOString().split('T')[0],
+      "Sample Product",
+      "RETAIL",
+      "100.00",
+      "150.00",
+      "10",
+      "N",
+      "General",
+      "0",
+      "9876543210",
+      "Sample Address",
+      "07AAAAA0000A1Z5", // Example 15-char GST
+      "Sample Nickname",
+      "PROD-001"
+    ];
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + headers.join(",") + "\n"
+      + sampleRow.map(v => `"${v}"`).join(",");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "products_upload_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleSaveMultipleProducts = async (productsToSave: any[]) => {
     setIsLoading(true);
-    const { successCount, errorCount } = await processInBatches(productsToSave);
-    let creditMsg = '';
-    if (creditData && successCount > 0) {
-      try {
-        await vendorApi.addCredit(creditData as CreditTransaction);
-        creditMsg = '\nCredit transaction added successfully.';
-      } catch (err) {
-        console.error("Failed to add credit transaction:", err);
-        creditMsg = '\nWARNING: Failed to add credit transaction.';
+
+    // Auto-add new categories
+    const uniqueCategories = Array.from(new Set(productsToSave.map(p => p.category?.trim()).filter(Boolean)));
+    for (const cat of uniqueCategories) {
+      if (!categories.includes(cat)) {
+        try {
+          await productApi.addCategory({ name: cat });
+        } catch(err) {
+          console.error("Failed to add missing category", cat, err);
+        }
       }
     }
 
-    toast.success(`${successCount} products added successfully.\n${errorCount} products failed to add.${creditMsg}`, { duration: 2500 });
+    const { successCount, errorCount } = await processInBatches(productsToSave);
+
+    toast.success(`${successCount} products added successfully.\n${errorCount} products failed to add.`, { duration: 2500 });
+    await fetchCategories();
     await refreshProducts();
     await refreshVendors();
     setIsLoading(false);
@@ -1087,8 +965,6 @@ const Products = () => {
           name: product.name,
           price: product.price,
           vendorNickname: resolvedNickname,
-          series: product.series || '',
-          billNo: product.billNo || '',
         };
       }
       return newSelection;
@@ -1105,9 +981,7 @@ const Products = () => {
   const handlePrintBarcodes = async () => {
     const productsToPrint = Object.entries(selectedProducts).map(([productId, item]) => {
       const metadata = formatBarcodeMeta({
-        vendorNickname: item.vendorNickname,
-        series: item.series,
-        billNo: item.billNo
+        vendorNickname: item.vendorNickname
       });
       return {
         id: productId,
@@ -1151,8 +1025,6 @@ const Products = () => {
           name: p.name,
           price: p.price,
           vendorNickname: resolvedNickname,
-          series: p.series || '',
-          billNo: p.billNo || '',
         };
       });
       setSelectedProducts(newSelection);
@@ -1169,6 +1041,17 @@ const Products = () => {
       <ConfirmationDialog />
       <div className="flex items-center gap-3">
         <h1 className="text-3xl font-bold text-gray-800">Retail Products (Total Stock: {totalStock})</h1>
+        <button
+          onClick={async () => {
+            await refreshProducts();
+            await refreshVendors();
+            toast.success('Products refreshed');
+          }}
+          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200"
+          title="Refresh products from database"
+        >
+          <RefreshCw size={18} className={isSyncing ? "animate-spin text-blue-600" : ""} />
+        </button>
         <SyncIndicator isSyncing={isSyncing} />
       </div>
       {error && <div className="p-4 text-red-600 bg-red-100 rounded-md">{error}</div>}
@@ -1190,19 +1073,29 @@ const Products = () => {
         </div>
         <div className="flex gap-4">
           {Object.keys(selectedProducts).length > 0 && (
-            <button onClick={handlePrintBarcodes} className="px-5 py-2.5 bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 flex items-center gap-2">
+            <button onClick={handlePrintBarcodes} className="px-3 py-1.5 text-sm text-sm bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 flex items-center gap-2">
               <Printer size={20} /> Print Selected Barcodes
             </button>
           )}
-          <button onClick={handleUploadClick} className="px-5 py-2.5 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 flex items-center gap-2">
-            <Upload size={20} /> Upload CSV
-          </button>
-          <button onClick={() => setCategoryModalOpen(true)} className="px-5 py-2.5 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 flex items-center gap-2">
-            <Layers size={20} /> Manage Categories
-          </button>
-          <button onClick={() => setIsMultiAddModalOpen(true)} className="px-5 py-2.5 bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 flex items-center gap-2">
-            <ListPlus size={20} /> Add Products
-          </button>
+          {isAdmin && (
+            <>
+              <button onClick={handleDownloadTemplate} className="px-3 py-1.5 text-sm text-sm bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 flex items-center gap-2">
+                <Download size={20} /> Template
+              </button>
+              <button onClick={handleUploadClick} className="px-3 py-1.5 text-sm text-sm bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 flex items-center gap-2">
+                <Upload size={20} /> Upload CSV
+              </button>
+              <button onClick={() => setCategoryModalOpen(true)} className="px-3 py-1.5 text-sm text-sm bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 flex items-center gap-2">
+                <Layers size={20} /> Manage Categories
+              </button>
+              <button onClick={() => handleOpenModal(null)} className="px-3 py-1.5 text-sm text-sm bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                <PlusCircle size={20} /> Add Product
+              </button>
+              <button onClick={() => setIsMultiAddModalOpen(true)} className="px-3 py-1.5 text-sm text-sm bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 flex items-center gap-2">
+                <ListPlus size={20} /> Add Products
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1218,22 +1111,16 @@ const Products = () => {
                 <thead className="bg-gray-50 border-b sticky top-0 z-10">
                   <tr>
                     <th className="p-4"><input type="checkbox" checked={isAllSelected} onChange={handleSelectAll} className="form-checkbox" /></th>
-                    <th className="p-4">S.No</th><th className="p-4">Date</th>
-                    <th className="p-4">Supplier Name</th><th className="p-4">Supplier ID</th>
-                    <th className="p-4">Product Name</th>
-                    <th className="p-4">Brand</th>
-                    <th className="p-4">Batch No</th>
-                    <th className="p-4">Expiry</th>
-                    <th className="p-4">Unit</th>
+                    <th className="p-4">S.NO</th>
                     <th className="p-4">Image</th>
-                    <th className="p-4">Series</th>
-                    <th className="p-4">Product ID / Barcode</th><th className="p-4">Category</th>
-                    {/* HSN/SAC Removed */}
-                    <th className="p-4">Purchase price</th>
-                    <th className="p-4">Purchase Disc</th>
-                    <th className="p-4">Retail price</th>
-                    <th className="p-4">GST</th>
-                    <th className="p-4">Inventory</th><th className="p-4">Action</th>
+                    <th className="p-4">Product Name</th>
+                    <th className="p-4">Category</th>
+                    <th className="p-4">Buy Rate</th>
+                    <th className="p-4">GST %</th>
+                    <th className="p-4">P.Disc %</th>
+                    <th className="p-4">Sell Price</th>
+                    <th className="p-4">Qty</th>
+                    {isAdmin && <th className="p-4 sticky right-0 bg-gray-50 border-l z-20">Action</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1246,85 +1133,27 @@ const Products = () => {
                         <tr key={product.id} className="border-t bg-blue-50/50">
                           <td className="p-4"><input type="checkbox" disabled className="form-checkbox opacity-50" /></td>
                           <td className="p-4">{((currentPage - 1) * itemsPerPage) + index + 1}</td>
-                          <td className="p-4 text-xs text-gray-500">{product.createdAt ? (product.createdAt.includes('T') ? new Date(product.createdAt).toLocaleDateString('en-GB') : product.createdAt.split('-').reverse().join('/')) : '-'}</td>
-
-                          {/* Supplier Name (auto-populated) */}
+                          
+                          {/* Image */}
                           <td className="p-4">
-                            <span className="text-sm text-gray-700">{editForm.vendorName || (editForm.vendorId ? '' : '-')}</span>
-                            {editForm.vendorId && !editForm.vendorName && (
-                              <span className="text-xs text-red-500 block">⚠ Invalid Supplier ID</span>
-                            )}
+                             <span className="text-gray-400 text-xs">Disabled</span>
                           </td>
 
-                          {/* Supplier ID (Editable) */}
-                          <td className="p-4">
-                            <input
-                              type="text"
-                              value={editForm.vendorId || ''}
-                              onChange={(e) => {
-                                const vendorId = e.target.value.trim();
-                                const matchedVendor = globalVendors.find(
-                                  (v) => String(v.id).trim() === vendorId
-                                );
-                                setEditForm({
-                                  ...editForm,
-                                  vendorId,
-                                  vendorName: matchedVendor ? matchedVendor.name : '',
-                                  vendorNickname: matchedVendor ? (matchedVendor.nickname || matchedVendor.name) : '',
-                                });
-                              }}
-                              className={`border rounded p-1 w-24 text-sm font-mono ${
-                                editForm.vendorId && !editForm.vendorName ? 'border-red-300 bg-red-50' : ''
-                              }`}
-                              placeholder="Supplier ID"
-                            />
-                          </td>
-
-                          {/* Product Name */}
+                          {/* Product Name & Barcode */}
                           <td className="p-4">
                             <input
                               type="text"
                               value={editForm.name}
                               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                              className="border rounded p-1 w-32 text-sm"
+                              className="border rounded p-1 w-32 text-sm mb-1 block"
+                              placeholder="Name"
                             />
-                          </td>
-                          <td className="p-4">
-                            <input type="text" value={editForm.brand || ''} onChange={e => setEditForm({ ...editForm, brand: e.target.value })} className="border rounded p-1 w-20 text-sm" />
-                          </td>
-                          <td className="p-4">
-                            <input type="text" value={editForm.batchNumber || ''} onChange={e => setEditForm({ ...editForm, batchNumber: e.target.value })} className="border rounded p-1 w-20 text-sm font-mono" />
-                          </td>
-                          <td className="p-4">
-                            <input type="date" value={editForm.expiryDate || ''} onChange={e => setEditForm({ ...editForm, expiryDate: e.target.value })} className="border rounded p-1 w-32 text-sm" />
-                          </td>
-                          <td className="p-4">
-                            <input type="text" value={editForm.unit || ''} onChange={e => setEditForm({ ...editForm, unit: e.target.value })} className="border rounded p-1 w-16 text-sm" />
-                          </td>
-
-                          {/* Image */}
-                          <td className="p-4">
-                             {/* Keep empty during inline edit, or disabled */}
-                             <span className="text-gray-400 text-xs">Disabled in edit</span>
-                          </td>
-
-                          {/* Series */}
-                          <td className="p-4">
-                            <input
-                              type="text"
-                              value={editForm.series}
-                              onChange={(e) => setEditForm({ ...editForm, series: e.target.value })}
-                              className="border rounded p-1 w-20 text-sm"
-                            />
-                          </td>
-
-                          {/* Barcode */}
-                          <td className="p-4">
                             <input
                               type="text"
                               value={editForm.barcode}
                               onChange={(e) => setEditForm({ ...editForm, barcode: e.target.value })}
-                              className="border rounded p-1 w-24 text-sm font-mono"
+                              className="border rounded p-1 w-32 text-xs font-mono"
+                              placeholder="Barcode"
                             />
                           </td>
 
@@ -1339,7 +1168,7 @@ const Products = () => {
                             </select>
                           </td>
 
-                          {/* Purchase Rate */}
+                          {/* Buy Rate */}
                           <td className="p-4">
                             <input
                               type="number"
@@ -1349,17 +1178,27 @@ const Products = () => {
                             />
                           </td>
 
-                          {/* Purchase Disc */}
+                          {/* GST % */}
+                          <td className="p-4">
+                            <input
+                              type="number"
+                              value={editForm.purchaseGst}
+                              onChange={(e) => setEditForm({ ...editForm, purchaseGst: e.target.value })}
+                              className="border rounded p-1 w-16 text-center text-sm"
+                            />
+                          </td>
+
+                          {/* P.Disc % */}
                           <td className="p-4">
                             <input
                               type="number"
                               value={editForm.purchaseDisc}
                               onChange={(e) => setEditForm({ ...editForm, purchaseDisc: e.target.value })}
-                              className="border rounded p-1 w-20 text-sm"
+                              className="border rounded p-1 w-16 text-sm"
                             />
                           </td>
 
-                          {/* Retail Selling Price */}
+                          {/* Sell Price */}
                           <td className="p-4">
                             <input
                               type="number"
@@ -1368,29 +1207,10 @@ const Products = () => {
                               className="border rounded p-1 w-20 text-sm"
                             />
                           </td>
-                          {/* Wholesale Price */}
-                          <td className="p-4">
-                            <input
-                              type="number"
-                              value={editForm.wholesaleSellingPrice}
-                              onChange={(e) => setEditForm({ ...editForm, wholesaleSellingPrice: e.target.value })}
-                              className="border rounded p-1 w-20 text-sm bg-indigo-50 border-indigo-200"
-                            />
-                          </td>
-
-                          {/* GST */}
-                          <td className="p-4">
-                            <input
-                              type="number"
-                              value={editForm.purchaseGst}
-                              onChange={(e) => setEditForm({ ...editForm, purchaseGst: e.target.value })}
-                              className="border rounded p-1 w-20 text-center text-sm"
-                            />
-                          </td>
 
                           <td className="p-4 relative">
                             {product.inventoryTracking === 'NOT_TRACKED' ? (
-                              <span className="text-gray-500 font-medium whitespace-nowrap">Not Tracked</span>
+                              <span className="text-gray-500 font-medium whitespace-nowrap">Unlimited</span>
                             ) : (
                               <>
                                 <input
@@ -1399,27 +1219,13 @@ const Products = () => {
                                   onChange={(e) => setEditForm({ ...editForm, stockQuantity: e.target.value })}
                                   className="border rounded p-1 w-20 text-center text-sm font-bold"
                                 />
-                                {product.stockQuantity !== parseInt(editForm.stockQuantity as string || '0') && (
-                                  <div className="absolute left-0 mt-2 flex items-center gap-1 bg-white p-2 border shadow-lg rounded-md z-50 whitespace-nowrap">
-                                    <input
-                                      type="checkbox"
-                                      id={`affectCredit-${product.id}`}
-                                      checked={editForm.affectCredit || false}
-                                      onChange={(e) => setEditForm({ ...editForm, affectCredit: e.target.checked })}
-                                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                                    />
-                                    <label htmlFor={`affectCredit-${product.id}`} className="text-xs font-semibold text-gray-700 cursor-pointer">
-                                      Deduct from Supplier Credit
-                                    </label>
-                                  </div>
-                                )}
                               </>
                             )}
                           </td>
 
                           <td className="p-4">
                             <div className="flex gap-2">
-                              <button onClick={handleSaveInline} disabled={isSaving || (editForm.vendorId !== '' && !editForm.vendorName)} className="text-green-600 hover:text-green-800 p-1 disabled:opacity-30"><CheckCircle size={20} /></button>
+                              <button onClick={handleSaveInline} disabled={isSaving} className="text-green-600 hover:text-green-800 p-1 disabled:opacity-30"><CheckCircle size={20} /></button>
                               <button onClick={handleCancelEdit} disabled={isSaving} className="text-red-500 hover:text-red-700 p-1"><X size={20} /></button>
                             </div>
                           </td>
@@ -1441,14 +1247,6 @@ const Products = () => {
                       <tr key={product.id} className={`border-t transition-colors ${isHighlighted ? highlightClass : (isSelected ? 'bg-blue-50' : 'hover:bg-gray-50')}`}>
                         <td className="p-4"><input type="checkbox" checked={isSelected} onChange={() => handleSelectProduct(product.id, product)} className="form-checkbox" /></td>
                         <td className="p-4">{((currentPage - 1) * itemsPerPage) + index + 1}</td>
-                        <td className="p-4">{formatDate(product.createdAt)}</td>
-                        <td className="p-4 font-medium">{product.vendorName || '-'}</td>
-                        <td className="p-4 font-mono">{product.vendorId || '-'}</td>
-                        <td className="p-4 font-medium">{product.name}</td>
-                        <td className="p-4 text-sm">{product.brand || '-'}</td>
-                        <td className="p-4 text-sm font-mono">{product.batchNumber || '-'}</td>
-                        <td className="p-4 text-sm">{product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : '-'}</td>
-                        <td className="p-4 text-sm">{product.unit || '-'}</td>
                         <td className="p-4">
                           <div className="flex flex-col items-center gap-2">
                             {product.imageUrl ? (
@@ -1497,40 +1295,42 @@ const Products = () => {
                             )}
                           </div>
                         </td>
-                        <td className="p-4 italic text-slate-500">{product.series || '-'}</td>
                         <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono">{product.barcode}</span>
+                          <div className="font-medium">{product.name}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-500 font-mono">{product.barcode}</span>
                             {isSelected && (
                               <input
                                 type="number"
                                 value={selectedProducts[product.id].quantity}
                                 onChange={(e) => handleBarcodeQuantityChange(product.id, parseInt(e.target.value, 10))}
-                                className="form-input w-16 text-center"
+                                className="border rounded p-1 w-16 text-xs text-center"
                                 min="1"
+                                title="Quantity for barcode printing"
                               />
                             )}
                           </div>
                         </td>
                         <td className="p-4">{product.category}</td>
-                        {/* HSN/SAC Removed */}
                         <td className="p-4">₹{parseFloat((product.purchaseRate || 0).toFixed(2))}</td>
+                        <td className="p-4">{parseFloat((Number(product.purchaseGst) || 0).toFixed(2))}%</td>
                         <td className="p-4">{(product.purchaseDisc || 0)}%</td>
                         <td className="p-4 font-bold">₹{parseFloat((product.price || 0).toFixed(2))}</td>
-                        <td className="p-4">{parseFloat((Number(product.purchaseGst) || 0).toFixed(2))}%</td>
                         <td className="p-4 font-bold">
                           {product.inventoryTracking === 'NOT_TRACKED' ? (
-                            <span className="text-green-600 font-normal whitespace-nowrap">{product.availabilityStatus === 'AVAILABLE' ? 'Available' : 'Unavailable'}</span>
+                            <span className="text-green-600 font-normal whitespace-nowrap">{product.availabilityStatus === 'AVAILABLE' ? 'Unlimited' : 'Unavailable'}</span>
                           ) : (
                             product.stockQuantity
                           )}
                         </td>
-                        <td className="p-4">
-                          <div className="flex gap-3">
-                            <button onClick={() => handleEditClick(product)} className="text-blue-600 hover:text-blue-800"><Pencil size={18} /></button>
-                            <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
-                          </div>
-                        </td>
+                        {isAdmin && (
+                          <td className="p-4 sticky right-0 bg-white border-l z-10 group-hover:bg-gray-50 transition-colors">
+                            <div className="flex gap-3">
+                              <button onClick={() => handleEditClick(product)} className="text-blue-600 hover:text-blue-800"><Pencil size={18} /></button>
+                              <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -1583,8 +1383,7 @@ const Products = () => {
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center backdrop-blur-sm">
           <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center animate-in fade-in zoom-in duration-300">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
-            <p className="text-lg font-semibold text-gray-800">Processing Update...</p>
-            <p className="text-sm text-gray-500 mt-2">Syncing prices with Vendor Service</p>
+            <p className="text-base font-semibold text-gray-800">Processing Update...</p>
           </div>
         </div>
       )}
@@ -1640,7 +1439,7 @@ const Products = () => {
               <div className="mt-8 flex justify-end">
                 <button
                   onClick={() => setUploadResults(null)}
-                  className="px-8 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-black transition-all shadow-lg hover:shadow-xl active:scale-95"
+                  className="px-5 py-2 text-sm bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl active:scale-95"
                 >
                   Done
                 </button>
@@ -1662,15 +1461,12 @@ const ProductFormModal = ({ product, categories, vendors, onSave, onClose, defau
     purchaseRate: product?.purchaseRate || 0, purchaseGst: product?.purchaseGst ?? defaultGst,
     purchaseDisc: product?.purchaseDisc || 0,
     price: product?.price || 0,
-    wholesaleSellingPrice: (product as any)?.wholesaleSellingPrice || product?.price || 0,
     mrp: product?.mrp || 0,
     discount: product?.discount || 0, stockQuantity: product?.stockQuantity || 0,
     vendorId: product?.vendorId || (vendors[0]?.id || ''), vendorName: product?.vendorName || (vendors[0]?.name || ''),
     vendorNickname: product?.vendorNickname || (vendors[0]?.nickname || vendors[0]?.name || ''),
     barcode: product?.barcode || '',
-    billNo: (product as any)?.billNo || '',
     createdAt: product?.createdAt || new Date().toISOString().split('T')[0],
-    affectCredit: false,
     availabilityStatus: product?.availabilityStatus || 'AVAILABLE',
     inventoryTracking: product?.inventoryTracking || 'NOT_TRACKED'
   });
@@ -1680,10 +1476,8 @@ const ProductFormModal = ({ product, categories, vendors, onSave, onClose, defau
   const nameRef = useRef<HTMLInputElement>(null);
   const categoryRef = useRef<HTMLSelectElement>(null);
   const supplierRef = useRef<HTMLSelectElement>(null);
-  const seriesRef = useRef<HTMLInputElement>(null);
   const purchaseRateRef = useRef<HTMLInputElement>(null);
   const sellingPriceRef = useRef<HTMLInputElement>(null);
-  const wholesalePriceInputRef = useRef<HTMLInputElement>(null);
   const stockRef = useRef<HTMLInputElement>(null);
   const gstRef = useRef<HTMLInputElement>(null);
   const purchaseDiscRef = useRef<HTMLInputElement>(null);
@@ -1713,11 +1507,7 @@ const ProductFormModal = ({ product, categories, vendors, onSave, onClose, defau
     if (formData.inventoryTracking === 'TRACKED' && stockQuantity <= 0) { toast.error("Stock Quantity must be greater than 0 when tracking inventory."); return; }
 
     // Auto-detect systemType by prefix if missing
-    let resolvedSystemType = (formData as any).systemType;
-    if (!resolvedSystemType) {
-      if (formData.id?.startsWith('MSWS') || formData.barcode?.startsWith('MSWS')) resolvedSystemType = 'Wholesale';
-      else resolvedSystemType = 'Retail';
-    }
+    let resolvedSystemType = 'Retail';
 
     onSave({ ...formData, systemType: resolvedSystemType }, imageFile);
   };
@@ -1744,19 +1534,12 @@ const ProductFormModal = ({ product, categories, vendors, onSave, onClose, defau
             <div><label>Category</label><select ref={categoryRef} name="category" value={formData.category} onChange={handleChange} onKeyDown={(e) => handleEnter(e, supplierRef)} className="form-input mt-1" required>{categories.map((c) => (<option key={c} value={c}>{c}</option>))}</select></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label>Supplier Name</label><select ref={supplierRef} name="vendorId" value={formData.vendorId} onChange={handleVendorChange} onKeyDown={(e) => handleEnter(e, seriesRef)} className="form-input mt-1" required><option value="" disabled>-- Select a Supplier --</option>{vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}</select></div>
-            <div><label>Series</label><input ref={seriesRef} name="series" type="text" value={formData.series} onChange={handleChange} onKeyDown={(e) => handleEnter(e, purchaseRateRef)} className="form-input mt-1" placeholder="e.g. RED, 101" /></div>
+            <div><label>Supplier Name</label><select ref={supplierRef} name="vendorId" value={formData.vendorId} onChange={handleVendorChange} onKeyDown={(e) => handleEnter(e, purchaseRateRef)} className="form-input mt-1" required><option value="" disabled>-- Select a Supplier --</option>{vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}</select></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="flex items-center gap-1">
                 Purchase Rate (₹)
-                <div className="group relative">
-                  <Info size={14} className="text-blue-500 cursor-help" />
-                  <div className="hidden group-hover:block absolute z-50 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg -mt-12 ml-6">
-                    Updating the purchase rate will automatically recalculate balances for all existing supplier credit transactions associated with this product.
-                  </div>
-                </div>
               </label>
               <input ref={purchaseRateRef} name="purchaseRate" type="number" value={formData.purchaseRate} onChange={handleChange} onKeyDown={(e) => handleEnter(e, sellingPriceRef)} className="form-input mt-1" />
             </div>
@@ -1769,7 +1552,7 @@ const ProductFormModal = ({ product, categories, vendors, onSave, onClose, defau
                 <option value="DISCONTINUED">Discontinued</option>
               </select>
               <select name="inventoryTracking" value={formData.inventoryTracking} onChange={handleChange} className="form-input mt-1">
-                <option value="NOT_TRACKED">Don't track quantity</option>
+                <option value="NOT_TRACKED">Unlimited (Don't track quantity)</option>
                 <option value="TRACKED">Track quantity</option>
               </select>
             </div>
@@ -1778,20 +1561,6 @@ const ProductFormModal = ({ product, categories, vendors, onSave, onClose, defau
               <div>
                 <label>Stock Quantity</label>
                 <input ref={stockRef} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} onKeyDown={(e) => handleEnter(e, gstRef)} className="form-input mt-1" />
-                {product && product.stockQuantity !== parseInt(formData.stockQuantity as any, 10) && (
-                  <div className="mt-2 flex items-center gap-2 bg-blue-50 p-2 rounded border border-blue-100">
-                    <input
-                      type="checkbox"
-                      id="modalAffectCredit"
-                      checked={formData.affectCredit as boolean}
-                      onChange={(e) => setFormData(prev => ({ ...prev, affectCredit: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <label htmlFor="modalAffectCredit" className="text-xs font-semibold text-gray-700 cursor-pointer whitespace-nowrap">
-                      Deduct from Supplier Credit
-                    </label>
-                  </div>
-                )}
               </div>
             )}
             <div>
@@ -1912,7 +1681,7 @@ function CategoryModal({ categories, onAddOrUpdate, onDeleteSuccess, onClose }: 
 
         <form onSubmit={handleAdd} className="flex gap-2 mb-6">
           <input ref={inputRef} type="text" placeholder="New Category Name" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="form-input flex-grow" disabled={isSaving} />
-          <button type="submit" disabled={isSaving || !newCategory.trim()} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50">
+          <button type="submit" disabled={isSaving || !newCategory.trim()} className="bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-green-700 disabled:opacity-50">
             {isSaving ? "..." : <PlusCircle size={20} />}
           </button>
         </form>
@@ -1929,9 +1698,9 @@ function CategoryModal({ categories, onAddOrUpdate, onDeleteSuccess, onClose }: 
               ) : (
                 <>
                   <span className="font-medium text-gray-700">{cat}</span>
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => { setEditingCategory(cat); setUpdatedCategory(cat); }} disabled={isSaving} className="text-blue-600 hover:text-blue-800 p-1"><Pencil size={16} /></button>
-                    <button onClick={() => handleDelete(cat)} disabled={isSaving} className="text-red-600 hover:text-red-800 p-1"><Trash2 size={16} /></button>
+                  <div className="flex gap-2 text-gray-400 transition-opacity">
+                    <button onClick={() => { setEditingCategory(cat); setUpdatedCategory(cat); }} disabled={isSaving} className="text-blue-600 hover:text-blue-800 p-1 bg-blue-50 rounded"><Pencil size={16} /></button>
+                    <button onClick={() => handleDelete(cat)} disabled={isSaving} className="text-red-600 hover:text-red-800 p-1 bg-red-50 rounded"><Trash2 size={16} /></button>
                   </div>
                 </>
               )}

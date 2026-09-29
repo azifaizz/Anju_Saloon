@@ -71,107 +71,99 @@ const CashierDashboard = () => {
   }
 
   return (
-    <div className="p-6 bg-slate-50 min-h-full space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Cashier Dashboard</h1>
-          <p className="text-sm text-slate-500">Overview of today's activities</p>
+    <div className="p-8 bg-white min-h-full space-y-10 font-sans">
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Cashier Dashboard</h1>
+          <p className="text-sm text-slate-500 font-medium">Overview of today's activities</p>
         </div>
         <button 
           onClick={() => navigate('/cashier/billing')}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 font-medium"
+          className="bg-blue-600 text-white px-5 py-2.5 text-sm rounded hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium"
         >
-          <ShoppingCart size={18} /> New Bill
+          <ShoppingCart size={16} /> New Bill
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Today's Revenue</p>
-            <h3 className="text-2xl font-bold text-slate-800">₹{todayRevenue.toLocaleString()}</h3>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between h-40">
+          <div className="flex justify-between items-start">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today's Revenue</p>
+            <DollarSign size={18} className="text-slate-400" />
           </div>
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
-            <DollarSign size={24} />
-          </div>
+          <h3 className="text-4xl font-semibold tracking-tighter text-slate-900">₹{todayRevenue.toLocaleString()}</h3>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Today's Bills</p>
-            <h3 className="text-2xl font-bold text-slate-800">{todayBills}</h3>
+        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between h-40">
+          <div className="flex justify-between items-start">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today's Bills</p>
+            <ShoppingCart size={18} className="text-slate-400" />
           </div>
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
-            <ShoppingCart size={24} />
-          </div>
+          <h3 className="text-4xl font-semibold tracking-tighter text-slate-900">{todayBills}</h3>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Low Stock Alerts</p>
-            <h3 className="text-2xl font-bold text-slate-800">{lowStockCount}</h3>
+        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between h-40">
+          <div className="flex justify-between items-start">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Low Stock Alerts</p>
+            <AlertTriangle size={18} className={lowStockCount > 0 ? "text-amber-500" : "text-slate-400"} />
           </div>
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${lowStockCount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-            <AlertTriangle size={24} />
-          </div>
+          <h3 className={`text-4xl font-semibold tracking-tighter ${lowStockCount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{lowStockCount}</h3>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Today's Appointments</p>
-            <h3 className="text-2xl font-bold text-slate-800">{todayAppointmentsCount}</h3>
+        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between h-40">
+          <div className="flex justify-between items-start">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today's Appointments</p>
+            <Calendar size={18} className="text-slate-400" />
           </div>
-          <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center">
-            <Calendar size={24} />
-          </div>
+          <h3 className="text-4xl font-semibold tracking-tighter text-slate-900">{todayAppointmentsCount}</h3>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-            <Clock size={18} className="text-blue-500" /> Recent Transactions
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2 tracking-tight">
+            Recent Transactions
           </h3>
           <button 
             onClick={() => navigate('/cashier/printed-bills')}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"
           >
-            View All
+            View All →
           </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead className="bg-white">
-              <tr className="text-xs text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="p-4 font-bold">Date & Time</th>
-                <th className="p-4 font-bold">Customer</th>
-                <th className="p-4 font-bold">Items</th>
-                <th className="p-4 font-bold">Total</th>
-                <th className="p-4 font-bold">Status</th>
+            <thead className="bg-slate-50">
+              <tr className="text-[11px] text-slate-500 uppercase tracking-widest border-b border-slate-200">
+                <th className="p-5 font-semibold">Date & Time</th>
+                <th className="p-5 font-semibold">Customer</th>
+                <th className="p-5 font-semibold">Items</th>
+                <th className="p-5 font-semibold">Total</th>
+                <th className="p-5 font-semibold text-right">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-100">
               {recentBills.map(bill => (
-                <tr key={bill.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="p-4 text-sm font-medium text-slate-600">
+                <tr key={bill.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <td className="p-5 text-sm font-medium text-slate-600">
                     {bill.createdAt ? format(new Date(bill.createdAt), 'dd MMM, hh:mm a') : 'N/A'}
                   </td>
-                  <td className="p-4">
-                    <p className="text-sm font-bold text-slate-800">{bill.customerName}</p>
+                  <td className="p-5">
+                    <p className="text-sm font-semibold text-slate-900">{bill.customerName}</p>
                     <p className="text-xs text-slate-500">{bill.customerPhone}</p>
                   </td>
-                  <td className="p-4 text-sm font-medium text-slate-600">
+                  <td className="p-5 text-sm font-medium text-slate-600">
                     {bill.items?.reduce((sum, item) => sum + item.quantity, 0) || 0} items
                   </td>
-                  <td className="p-4 text-sm font-bold text-slate-800">
+                  <td className="p-5 text-sm font-mono font-semibold text-slate-900">
                     ₹{(bill.finalAmount || bill.amountPaid || 0).toLocaleString()}
                   </td>
-                  <td className="p-4">
-                    <span className={`text-xs font-bold px-2 py-1 rounded-md ${
-                      bill.status === 'PAID' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
-                      bill.status === 'CANCELLED' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
-                      bill.status === 'HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                      'bg-slate-50 text-slate-600 border border-slate-200'
+                  <td className="p-5 text-right">
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 uppercase tracking-wider rounded-full ${
+                      bill.status === 'PAID' ? 'bg-blue-600 text-white' :
+                      bill.status === 'CANCELLED' ? 'bg-red-50 text-red-600 border border-red-100' :
+                      bill.status === 'HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                      'bg-slate-100 text-slate-600'
                     }`}>
                       {bill.status || 'PAID'}
                     </span>
@@ -180,7 +172,7 @@ const CashierDashboard = () => {
               ))}
               {recentBills.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                  <td colSpan={5} className="p-12 text-center text-slate-400 font-medium text-sm">
                     No recent transactions
                   </td>
                 </tr>

@@ -25,7 +25,7 @@ const Collections = () => {
             <h2 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-gray-900">
               Our <span className="text-gradient-salon">Collections</span>
             </h2>
-            <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+            <p className="text-base text-gray-600 max-w-3xl mx-auto leading-relaxed">
               Explore our carefully curated selection of professional salon services and
               premium cosmetics.
             </p>

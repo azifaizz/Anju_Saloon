@@ -5,6 +5,8 @@ import { useGlobalData } from '@/context/GlobalDataContext';
 import { appointmentApi, Appointment } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO, isSameDay, addDays, subDays } from 'date-fns';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { ShoppingCart } from 'lucide-react';
 
 const Appointments = () => {
   const { appointments, customers, salonServices, staff, refreshAppointments } = useGlobalData();
@@ -12,6 +14,8 @@ const Appointments = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
+  const location = useLocation();
   
   // Modal Form State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -102,6 +106,11 @@ const Appointments = () => {
     }
   };
 
+  const handleCreateBill = (apt: Appointment) => {
+    const isAdmin = location.pathname.includes('/admin');
+    navigate(isAdmin ? '/admin/billing' : '/cashier/billing', { state: { appointment: apt } });
+  };
+
   const toggleService = (serviceId: string) => {
     const current = formData.serviceIds || [];
     if (current.includes(serviceId)) {
@@ -130,7 +139,7 @@ const Appointments = () => {
         </div>
         <button 
           onClick={() => handleOpenModal()}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+          className="bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
         >
           <Plus size={18} /> New Appointment
         </button>
@@ -142,8 +151,8 @@ const Appointments = () => {
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2"><CalendarIcon size={18}/> Date</h3>
             <div className="flex flex-col gap-2">
-              <button onClick={() => setSelectedDate(new Date())} className={`px-4 py-2 rounded-lg text-sm text-left transition ${isSameDay(selectedDate, new Date()) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-600'}`}>Today</button>
-              <button onClick={() => setSelectedDate(addDays(new Date(), 1))} className={`px-4 py-2 rounded-lg text-sm text-left transition ${isSameDay(selectedDate, addDays(new Date(), 1)) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-600'}`}>Tomorrow</button>
+              <button onClick={() => setSelectedDate(new Date())} className={`px-3 py-1.5 text-sm rounded-lg text-sm text-left transition ${isSameDay(selectedDate, new Date()) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-600'}`}>Today</button>
+              <button onClick={() => setSelectedDate(addDays(new Date(), 1))} className={`px-3 py-1.5 text-sm rounded-lg text-sm text-left transition ${isSameDay(selectedDate, addDays(new Date(), 1)) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-600'}`}>Tomorrow</button>
               <hr className="my-2 border-slate-100" />
               <input 
                 type="date" 
@@ -160,7 +169,7 @@ const Appointments = () => {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-            <h2 className="font-semibold text-lg text-slate-800">
+            <h2 className="font-semibold text-base text-slate-800">
               {isSameDay(selectedDate, new Date()) ? "Today's Schedule" : format(selectedDate, 'EEEE, MMM do yyyy')}
             </h2>
             <div className="relative w-64">
@@ -189,7 +198,7 @@ const Appointments = () => {
                       <p className="text-xl font-bold text-slate-800">{apt.time}</p>
                     </div>
                     <div>
-                      <h3 className="font-semibold text-slate-800 text-lg flex items-center gap-2">
+                      <h3 className="font-semibold text-slate-800 text-base flex items-center gap-2">
                         {apt.customerName}
                         <span className={`text-xs px-2 py-0.5 rounded-full border ${getStatusColor(apt.status)}`}>
                           {apt.status}
@@ -218,8 +227,9 @@ const Appointments = () => {
                     </div>
                   </div>
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleOpenModal(apt)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit2 size={18}/></button>
-                    <button onClick={() => handleDelete(apt.id!)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 size={18}/></button>
+                    <button onClick={() => handleCreateBill(apt)} title="Create Bill" className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"><ShoppingCart size={18}/></button>
+                    <button onClick={() => handleOpenModal(apt)} title="Edit" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit2 size={18}/></button>
+                    <button onClick={() => handleDelete(apt.id!)} title="Delete" className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 size={18}/></button>
                   </div>
                 </div>
               ))
@@ -354,7 +364,7 @@ const Appointments = () => {
               </form>
 
               <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg transition font-medium">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition font-medium">
                   Cancel
                 </button>
                 <button type="submit" form="appointment-form" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">

@@ -45,13 +45,13 @@ const Login = () => {
           <div className="space-y-3">
             <button
               onClick={() => setIsLoggingIn(true)} // Trigger auto-redirect logic
-              className="w-full py-3 px-4 rounded-lg shadow text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-all font-semibold"
+              className="w-full py-2 px-4 rounded-md shadow text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-all"
             >
               Continue to Dashboard
             </button>
             <button
               onClick={() => logout()}
-              className="w-full py-3 px-4 rounded-lg shadow text-sm font-medium text-red-200 bg-red-500/20 hover:bg-red-500/30 transition-all"
+              className="w-full py-2 px-4 rounded-md shadow text-sm font-medium text-red-200 bg-red-500/20 hover:bg-red-500/30 transition-all"
             >
               Logout & Switch Account
             </button>
@@ -82,10 +82,10 @@ const Login = () => {
         </div>
 
         {/* Role Switcher */}
-        <div className="p-1 space-x-1 bg-black/20 rounded-xl flex">
+        <div className="p-1 space-x-1 bg-black/20 rounded-md flex">
           <button
             onClick={() => setLoginType('user')}
-            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all duration-300 ${loginType === 'user'
+            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all duration-300 ${loginType === 'user'
               ? 'bg-white/20 shadow text-white border border-white/10'
               : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
@@ -95,7 +95,7 @@ const Login = () => {
 
           <button
             onClick={() => setLoginType('admin')}
-            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all duration-300 ${loginType === 'admin'
+            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all duration-300 ${loginType === 'admin'
               ? 'bg-white/20 shadow text-white border border-white/10'
               : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
@@ -144,12 +144,13 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
   
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
+    const normalizedEmail = email.toLowerCase().trim();
     setError('');
     setIsLoading(true);
     setIsLoggingIn(true); // Signal that we are attempting a fresh login
 
     // Basic client-side validation
-    if (!email.includes('@') || email.length < 5) {
+    if (!normalizedEmail.includes('@') || normalizedEmail.length < 5) {
       setError("Please enter a valid email address.");
       setIsLoading(false);
       setIsLoggingIn(false);
@@ -167,13 +168,26 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
       // Firebase Authentication
       let userCredential;
       try {
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
       } catch (authErr: any) {
         // If this is a brand new Firebase project, the admin account won't exist yet.
-        // Auto-create it if they are trying to log in as admin@mail.com
-        if (expectedRole === 'Admin' && email === 'admin@mail.com' && (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/invalid-login-credentials')) {
-          userCredential = await createUserWithEmailAndPassword(auth, email, password);
-          console.log("Auto-created admin@mail.com account in Firebase Auth!");
+        // Auto-create it if they are trying to log in as admin@mail.com or cashier@mail.com
+        if (expectedRole === 'Admin' && normalizedEmail === 'admin@mail.com' && (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/invalid-login-credentials')) {
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+            console.log("Auto-created admin@mail.com account in Firebase Auth!");
+          } catch (createErr: any) {
+            if (createErr.code === 'auth/email-already-in-use') throw new Error("Incorrect password.");
+            throw createErr;
+          }
+        } else if (expectedRole === 'Cashier' && normalizedEmail === 'cashier@mail.com' && (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/invalid-login-credentials')) {
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+            console.log("Auto-created cashier@mail.com account in Firebase Auth!");
+          } catch (createErr: any) {
+            if (createErr.code === 'auth/email-already-in-use') throw new Error("Incorrect password.");
+            throw createErr;
+          }
         } else {
           throw authErr;
         }
@@ -205,7 +219,10 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
         if (firebaseUser.email === 'admin@mail.com' && userData.role !== 'Admin') {
           await setDoc(docRef, { role: 'Admin' }, { merge: true });
           console.log("Recovered admin@mail.com to Admin role");
-        } else if (userData.role !== expectedRole && firebaseUser.email !== 'admin@mail.com') {
+        } else if (firebaseUser.email === 'cashier@mail.com' && userData.role !== 'Cashier') {
+          await setDoc(docRef, { role: 'Cashier' }, { merge: true });
+          console.log("Recovered cashier@mail.com to Cashier role");
+        } else if (userData.role !== expectedRole && firebaseUser.email !== 'admin@mail.com' && firebaseUser.email !== 'cashier@mail.com') {
           // Role mismatch
           await auth.signOut(); // Force logout so they aren't stuck in "Welcome Back" with wrong role
           throw new Error(`Access denied: You are not a ${expectedRole}.`);
@@ -239,7 +256,7 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
           <input
             type="email"
             id="email"
-            className="block w-full pl-10 pr-3 py-3 border border-white/20 rounded-lg bg-black/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm"
+            className="block w-full pl-10 pr-3 py-2 border border-white/20 rounded-md bg-black/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -262,7 +279,7 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
           <input
             type={showPassword ? "text" : "password"}
             id="password"
-            className="block w-full pl-10 pr-10 py-3 border border-white/20 rounded-lg bg-black/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm"
+            className="block w-full pl-10 pr-10 py-2 border border-white/20 rounded-md bg-black/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm"
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -284,10 +301,10 @@ const LoginForm = ({ expectedRole, buttonText, buttonClass, setIsLoggingIn }: Lo
       <button
         type="submit"
         disabled={isLoading}
-        className={`group w-full flex items-center justify-center py-3 px-4 rounded-lg text-white font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500 transition-all duration-300 ${buttonClass}`}
+        className={`group w-full flex items-center justify-center py-2 px-4 rounded-md text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500 transition-all duration-300 ${buttonClass}`}
       >
         {isLoading ? "Signing In..." : buttonText}
-        {!isLoading && <ArrowRight className="ml-2 h-5 w-5 transform group-hover:translate-x-1 transition-transform" />}
+        {!isLoading && <ArrowRight className="ml-2 h-4 w-4 transform group-hover:translate-x-1 transition-transform" />}
       </button>
       {/* Divider - Visual only, keeping layout consitency */}
       <div className="relative flex py-2 items-center">

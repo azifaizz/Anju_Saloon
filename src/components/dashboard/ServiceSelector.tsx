@@ -78,7 +78,7 @@ const ServiceSelector: React.FC<ServiceSelectorProps> = ({ onAddService, disable
           {filteredServices.map((service, idx) => (
             <div
               key={service.id}
-              className={`px-4 py-2 cursor-pointer border-b last:border-b-0 flex justify-between items-center transition-colors ${idx === highlightedIndex ? 'bg-pink-600 text-white' : 'hover:bg-pink-50 text-gray-800'}`}
+              className={`px-3 py-1.5 text-sm cursor-pointer border-b last:border-b-0 flex justify-between items-center transition-colors ${idx === highlightedIndex ? 'bg-pink-600 text-white' : 'hover:bg-pink-50 text-gray-800'}`}
               onMouseEnter={() => setHighlightedIndex(idx)}
               onClick={() => {
                 onAddService(service);
