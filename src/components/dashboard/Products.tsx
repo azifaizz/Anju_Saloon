@@ -1055,10 +1055,10 @@ const Products = () => {
         <SyncIndicator isSyncing={isSyncing} />
       </div>
       {error && <div className="p-4 text-red-600 bg-red-100 rounded-md">{error}</div>}
-      <div className="bg-white p-6 rounded-lg shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex flex-1 gap-4 w-full">
-          <input type="text" placeholder="Search all products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="form-input w-full md:w-1/3" />
-          <div className="flex items-center gap-2">
+      <div className="bg-white p-6 rounded-lg shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <div className="flex flex-col md:flex-row flex-1 gap-4 w-full">
+          <input type="text" placeholder="Search all products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="form-input w-full md:flex-1 min-w-[200px]" />
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-gray-500 flex items-center gap-1"><Calendar size={16} /> Date:</span>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-input py-1 px-2 text-sm w-32" placeholder="Start Date" />
             <span className="text-gray-400">-</span>
